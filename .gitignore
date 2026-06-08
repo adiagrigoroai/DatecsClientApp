@@ -1,0 +1,17 @@
+# Gradle
+.gradle/
+build/
+local.properties
+
+# Android Studio / IntelliJ
+.idea/
+*.iml
+.DS_Store
+captures/
+
+# Keystore — NU comitem keystore-ul cu parolele
+app/release.keystore
+
+# APK outputs locali
+*.apk
+!app/build/outputs/apk/release/*.apk

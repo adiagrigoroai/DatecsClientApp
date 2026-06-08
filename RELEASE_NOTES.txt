@@ -1,0 +1,25 @@
+DatecsClientApp v1.0.2
+Data: 08.06.2026
+
+Auto-update + Export rapid luna anterioara:
+
+- AUTO-UPDATE GitHub Releases:
+  La pornirea aplicatiei, verifica automat daca exista versiune
+  noua pe https://github.com/adiagrigoroai/DatecsClientApp.
+  Daca DA, apare dialog cu release notes si buton "Actualizeaza".
+  Userul autorizeaza o singura data permisiunea "Install unknown apps",
+  apoi APK-ul se descarca + instaleaza automat.
+
+- EXPORT RAPID "LUNA ANTERIOARA":
+  Buton nou in tab-ul Export. Computeaza automat intervalul:
+    in iunie -> 1 mai - 31 mai
+    in iulie -> 1 iunie - 30 iunie
+    etc.
+  Dupa download, fisierele se urca automat in cloud.itsmart.ro
+  (acelasi flow ca StatusAMEF Windows).
+
+- FIX Compose BOM (v1.0.1): crash CircularProgressIndicator pe
+  Android 15 / Lenovo TB330FU rezolvat (BOM 2024.12.01).
+
+--------------------------------------------
+IT Smart Retail SRL | www.itsmart.ro
