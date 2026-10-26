@@ -590,15 +590,11 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 json.put("antet_complet", antetComplet); json.put("tva", tvaLinie)
                 json.put("observatii", "TVA: $tvaLinie"); json.put("utilizator", _username.value.ifEmpty { "android_client" })
 
+                // CRM-ul cere autentificare: starea pleaca prin serverul TDA Pos (contul CRM e doar pe server)
                 kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
-                    val conn = java.net.URL("$CRM_BASE_URL/api/preluare_amef").openConnection() as java.net.HttpURLConnection
-                    conn.requestMethod = "POST"
-                    conn.setRequestProperty("Content-Type", "application/json; charset=UTF-8")
-                    conn.doOutput = true; conn.connectTimeout = 15000; conn.readTimeout = 15000
-                    conn.outputStream.use { it.write(json.toString().toByteArray(Charsets.UTF_8)) }
-                    conn.responseCode
+                    com.itsmart.datecs.client.service.TdaServerClient.sendStatus(getApplication(), json, "IT Smart Client")
                 }
-                addLog("CRM", "Auto-raport OK", "silent", true)
+                addLog("CRM", "Stare trimisa in CRM", ds.serialNumber, true)
             } catch (e: Exception) {
                 addLog("CRM", "Auto-raport EROARE", e.message, false)
             }

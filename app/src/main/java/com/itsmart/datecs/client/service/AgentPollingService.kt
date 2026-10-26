@@ -4,6 +4,7 @@ import android.app.Service
 import android.content.Intent
 import android.os.IBinder
 import android.util.Log
+import com.itsmart.datecs.client.device.InternalFiscalBridge
 import com.itsmart.datecs.client.viewmodel.MainViewModel
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -31,6 +32,8 @@ class AgentPollingService : Service() {
     companion object {
         private const val TAG = "AgentPollingService"
         private const val POLL_INTERVAL_MS = 60_000L
+        /** BlueCash: starea in CRM o data pe zi; daca modulul e ocupat, reincercare la 10 minute. */
+        private const val STATUS_RETRY_MS = 10 * 60_000L
 
         const val ACTION_NEW_COMMAND = "com.itsmart.datecs.client.NEW_COMMAND"
         const val EXTRA_SERIAL = "serial"
@@ -72,6 +75,7 @@ class AgentPollingService : Service() {
             }
         }
 
+        NotificationHelper.ensureChannels(this)   // si la pornirea dupa boot, fara MainActivity
         val notification = NotificationHelper.foregroundNotification(
             this,
             if (activeSerial.isNotBlank()) "Monitorizez comenzi pentru $activeSerial"
@@ -89,8 +93,25 @@ class AgentPollingService : Service() {
 
     private fun startPollingLoop() {
         pollJob = scope.launch {
+            var nextStatusAt = System.currentTimeMillis() + 60_000L   // prima citire la un minut dupa pornire
             while (isActive) {
                 try {
+                    // BlueCash: starea casei in CRM o data pe zi, indiferent de aplicatia de vanzare deschisa
+                    val today = java.time.LocalDate.now().toString()
+                    val prefs = getSharedPreferences("tda_server", MODE_PRIVATE)
+                    if (InternalFiscalBridge.isAvailable() && prefs.getString("monitor_day", "") != today &&
+                        System.currentTimeMillis() >= nextStatusAt) {
+                        nextStatusAt = System.currentTimeMillis() + when (val r = BlueCashMonitor.runOnce(this@AgentPollingService)) {
+                            is BlueCashMonitor.Result.Sent -> {
+                                if (activeSerial.isBlank()) activeSerial = r.serial   // comenzile CRM pentru casa interna
+                                prefs.edit().putString("monitor_day", today).apply()
+                                saveMonitorState("Stare trimisa in CRM (${r.serial})")
+                                STATUS_RETRY_MS
+                            }
+                            is BlueCashMonitor.Result.Busy -> { saveMonitorState("Amanat: ${r.reason}"); STATUS_RETRY_MS }
+                            is BlueCashMonitor.Result.Failed -> { saveMonitorState("Eroare: ${r.reason}"); STATUS_RETRY_MS * 3 }
+                        }
+                    }
                     val serial = activeSerial
                     if (serial.isNotBlank()) pollOnce(serial)
                 } catch (t: Throwable) {
@@ -99,6 +120,12 @@ class AgentPollingService : Service() {
                 delay(POLL_INTERVAL_MS)
             }
         }
+    }
+
+    private fun saveMonitorState(text: String) {
+        val t = java.text.SimpleDateFormat("dd.MM HH:mm", java.util.Locale.US).format(java.util.Date())
+        getSharedPreferences("tda_server", MODE_PRIVATE).edit().putString("monitor_state", "$t — $text").apply()
+        Log.d(TAG, "Monitor: $text")
     }
 
     private fun pollOnce(serial: String) {

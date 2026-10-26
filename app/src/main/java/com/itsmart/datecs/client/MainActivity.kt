@@ -97,6 +97,14 @@ class MainActivity : ComponentActivity() {
         // Initializez canalele de notificare (sunet + heads-up).
         com.itsmart.datecs.client.service.NotificationHelper.ensureChannels(this)
 
+        // BlueCash: monitorizarea starii casei in fundal porneste odata cu aplicatia (si dupa boot)
+        if (com.itsmart.datecs.client.device.InternalFiscalBridge.isAvailable()) {
+            try {
+                startForegroundService(android.content.Intent(this, com.itsmart.datecs.client.service.AgentPollingService::class.java)
+                    .setAction(com.itsmart.datecs.client.service.AgentPollingService.ACTION_START))
+            } catch (_: Throwable) {}
+        }
+
         // Receiver-ul de broadcast e inregistrat la onCreate (NU onStart) ca sa
         // primeasca comenzi si cand Activity-ul e in background — service-ul foreground
         // tine procesul viu, deci instanta MainActivity persista pana la onDestroy.

@@ -66,6 +66,13 @@
                 android:resource="@xml/file_paths" />
         </provider>
 
+        <!-- BlueCash: porneste monitorizarea casei dupa repornirea aparatului -->
+        <receiver android:name=".service.BootReceiver" android:exported="false">
+            <intent-filter>
+                <action android:name="android.intent.action.BOOT_COMPLETED" />
+            </intent-filter>
+        </receiver>
+
         <!-- Foreground service: polezza CRM la 60s pt comenzi noi (revizie, export, etc.). -->
         <service
             android:name=".service.AgentPollingService"
