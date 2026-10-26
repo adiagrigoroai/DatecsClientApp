@@ -18,6 +18,8 @@ import com.itsmart.datecs.client.data.model.CommandResult
 import com.itsmart.datecs.client.data.model.ConnectionType
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.sync.withLock
 import java.io.IOException
 import java.io.InputStream
 import java.io.OutputStream
@@ -29,6 +31,8 @@ class DudeDeviceConnection(private val context: Context) : IDeviceConnection {
 
     companion object {
         private const val TAG = "DudeDevice"
+        /** BlueCash: modulul intern se elibereaza dupa atatea ms fara comenzi. */
+        private const val INTERNAL_IDLE_MS = 4_000L
         private val SPP_UUID = UUID.fromString("00001101-0000-1000-8000-00805F9B34FB")
         private const val DATECS_USB_VID = 65520
         private const val FTDI_USB_VID = 1027
@@ -44,7 +48,78 @@ class DudeDeviceConnection(private val context: Context) : IDeviceConnection {
     var modelName: String = ""
         private set
 
-    override val isConnected: Boolean get() = fiscalDevice != null
+    override val isConnected: Boolean get() = fiscalDevice != null || internalMode
+
+    // ---- BlueCash: modulul fiscal intern poate fi folosit de o singura aplicatie odata ----
+    // Pe BC50 nu tinem modulul ocupat: il deschidem pe durata unei operatii si il eliberam dupa
+    // INTERNAL_IDLE_MS fara comenzi, ca aplicatia de vanzare (TDA Pos, Freya etc.) sa poata emite bonuri.
+    private var internalMode = false
+    private val activeOps = java.util.concurrent.atomic.AtomicInteger(0)
+    private val openLock = kotlinx.coroutines.sync.Mutex()
+    private val releaseScope = kotlinx.coroutines.CoroutineScope(Dispatchers.IO + kotlinx.coroutines.SupervisorJob())
+    private var releaseJob: kotlinx.coroutines.Job? = null
+    /** Ultima eroare de acces la modulul intern (ex. ocupat de alta aplicatie). */
+    var lastAccessError: String = ""
+        private set
+
+    private fun openInternalDevice(): FiscalDevice? {
+        openInternalConnection()
+        val inp = inputStream ?: return null
+        val out = outputStream ?: return null
+        for (i in 0 until 4) {
+            val candidate = FMP_P6X_ROU(inp, out)
+            if (try { candidate.command74Variant0Version0(); true } catch (_: Exception) { false }) {
+                DatecsFiscalDevice(FiscalException.FPTR_CC_ROMANIA)
+                DatecsFiscalDevice.setConnectedModel(candidate)
+                return DatecsFiscalDevice.getConnectedModel()
+            }
+            Thread.sleep(400)
+        }
+        closeRawConnection()
+        return null
+    }
+
+    /** Dispozitivul pentru o operatie; pe BlueCash redeschide modulul intern daca a fost eliberat. */
+    private suspend fun acquire(): FiscalDevice? {
+        if (!internalMode) return fiscalDevice
+        activeOps.incrementAndGet()
+        releaseJob?.cancel()
+        val dev = openLock.withLock {
+            fiscalDevice ?: withContext(Dispatchers.IO) {
+                try { openInternalDevice() } catch (e: Exception) { Log.w(TAG, "reopen intern: ${e.message}"); null }
+            }.also { fiscalDevice = it }
+        }
+        if (dev == null) {
+            lastAccessError = "Modulul fiscal este folosit de alta aplicatie"
+            activeOps.decrementAndGet()
+        } else lastAccessError = ""
+        return dev
+    }
+
+    /** Operatie terminata: pe BlueCash, modulul se elibereaza dupa o pauza fara comenzi. */
+    private fun released() {
+        if (!internalMode) return
+        if (activeOps.decrementAndGet() > 0) return
+        scheduleInternalRelease()
+    }
+
+    private fun scheduleInternalRelease() {
+        releaseJob?.cancel()
+        releaseJob = releaseScope.launch {
+            kotlinx.coroutines.delay(INTERNAL_IDLE_MS)
+            openLock.withLock {
+                if (activeOps.get() == 0 && fiscalDevice != null) {
+                    try { fiscalDevice?.close() } catch (_: Exception) {}
+                    fiscalDevice = null
+                    closeRawConnection()
+                    Log.d(TAG, "Modul fiscal intern eliberat (inactiv)")
+                }
+            }
+        }
+    }
+
+    private suspend fun <T> useFd(block: suspend kotlinx.coroutines.CoroutineScope.() -> T): T =
+        try { withContext(Dispatchers.IO, block) } finally { released() }
 
     @SuppressLint("MissingPermission")
     override suspend fun connect(address: String, type: ConnectionType): Boolean {
@@ -86,6 +161,8 @@ class DudeDeviceConnection(private val context: Context) : IDeviceConnection {
                     DatecsFiscalDevice.setConnectedModel(dev)
                     fiscalDevice = DatecsFiscalDevice.getConnectedModel()
                     modelName = if (Regex("(?i)500").containsMatchIn(android.os.Build.MODEL ?: "")) "BC-500" else "BC-50"
+                    internalMode = true
+                    scheduleInternalRelease()
                     Log.d(TAG, "connect() INTERNAL SUCCESS model=$modelName")
                     return@withContext true
                 }
@@ -280,6 +357,8 @@ class DudeDeviceConnection(private val context: Context) : IDeviceConnection {
     }
 
     override suspend fun disconnect() {
+        internalMode = false
+        releaseJob?.cancel()
         withContext(Dispatchers.IO) {
             try { fiscalDevice?.close() } catch (_: Exception) {}
             fiscalDevice = null
@@ -305,8 +384,8 @@ class DudeDeviceConnection(private val context: Context) : IDeviceConnection {
     }
 
     override suspend fun executeCommand(cmd: Int, params: String): CommandResult {
-        val fd = fiscalDevice ?: return CommandResult(false, -1, "Not connected", emptyMap())
-        return withContext(Dispatchers.IO) {
+        val fd = acquire() ?: return CommandResult(false, -1, lastAccessError.ifEmpty { "Not connected" }, emptyMap())
+        return useFd {
             try {
                 val response: FiscalResponse? = when (cmd) {
                     38 -> fd.command38Variant0Version0(params.ifEmpty { "" })
@@ -417,8 +496,8 @@ class DudeDeviceConnection(private val context: Context) : IDeviceConnection {
     }
 
     override suspend fun cmd255Read(name: String, index: String): String {
-        val fd = fiscalDevice ?: return ""
-        return withContext(Dispatchers.IO) {
+        val fd = acquire() ?: return ""
+        return useFd {
             try {
                 Log.d(TAG, "cmd255Read: name=$name index=$index")
                 val enumName = FiscalDevice.cmd255Name.valueOf(name)
@@ -450,8 +529,8 @@ class DudeDeviceConnection(private val context: Context) : IDeviceConnection {
     }
 
     override suspend fun cmd255Write(name: String, index: String, value: String): Boolean {
-        val fd = fiscalDevice ?: return false
-        return withContext(Dispatchers.IO) {
+        val fd = acquire() ?: return false
+        return useFd {
             try {
                 val enumName = FiscalDevice.cmd255Name.valueOf(name)
                 fd.Command255Write(enumName, index, value)
@@ -478,8 +557,8 @@ class DudeDeviceConnection(private val context: Context) : IDeviceConnection {
      * @return List of text lines forming the report
      */
     suspend fun readFiscalReportByZText(startZ: String, endZ: String, detailed: Boolean): List<String> {
-        val fd = fiscalDevice ?: throw IOException("Not connected")
-        return withContext(Dispatchers.IO) {
+        val fd = acquire() ?: throw IOException(lastAccessError.ifEmpty { "Not connected" })
+        return useFd {
             val type = if (detailed) "11" else "10"
             fd.command95Variant0Version0(type, startZ, endZ)
             val lines = mutableListOf<String>()
@@ -507,8 +586,8 @@ class DudeDeviceConnection(private val context: Context) : IDeviceConnection {
      * @return BASE64-encoded XML string with file list
      */
     suspend fun readAnafFileListBase64(from: String, to: String): Pair<String, Int> {
-        val fd = fiscalDevice ?: throw IOException("Not connected")
-        return withContext(Dispatchers.IO) {
+        val fd = acquire() ?: throw IOException(lastAccessError.ifEmpty { "Not connected" })
+        return useFd {
             // Set range
             Log.d(TAG, "ANAF cmd128v0: Setting range from=$from to=$to")
             val r0 = fd.command128Variant0Version0(from, to)
@@ -547,8 +626,8 @@ class DudeDeviceConnection(private val context: Context) : IDeviceConnection {
      * @return BASE64-encoded file content
      */
     suspend fun readAnafFileBase64(fileName: String): String {
-        val fd = fiscalDevice ?: throw IOException("Not connected")
-        return withContext(Dispatchers.IO) {
+        val fd = acquire() ?: throw IOException(lastAccessError.ifEmpty { "Not connected" })
+        return useFd {
             // Select file
             Log.d(TAG, "ANAF cmd128v2: Selecting file: $fileName")
             fd.command128Variant2Version0(fileName)
