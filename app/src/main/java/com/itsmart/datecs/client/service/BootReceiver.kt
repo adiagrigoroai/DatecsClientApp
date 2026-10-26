@@ -11,7 +11,8 @@ class BootReceiver : BroadcastReceiver() {
         if (intent.action != Intent.ACTION_BOOT_COMPLETED) return
         if (!InternalFiscalBridge.isAvailable()) return
         try {
-            ctx.startForegroundService(Intent(ctx, AgentPollingService::class.java).setAction(AgentPollingService.ACTION_START))
+            ctx.startForegroundService(Intent(ctx, AgentPollingService::class.java).setAction(AgentPollingService.ACTION_START)
+                .putExtra(AgentPollingService.EXTRA_FROM_BOOT, true))
         } catch (_: Throwable) {}
     }
 }

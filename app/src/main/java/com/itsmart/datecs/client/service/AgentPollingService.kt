@@ -44,6 +44,7 @@ class AgentPollingService : Service() {
         const val ACTION_START = "start"
         /** BlueCash: citire si trimitere a starii imediat (buton in ecranul Status). */
         const val ACTION_STATUS_NOW = "status_now"
+        const val EXTRA_FROM_BOOT = "from_boot"
         const val ACTION_STOP = "stop"
         const val ACTION_SET_SERIAL = "set_serial"
         const val EXTRA_NEW_SERIAL = "new_serial"
@@ -89,6 +90,7 @@ class AgentPollingService : Service() {
             Log.w(TAG, "startForeground EROARE: ${t.message}")
         }
 
+        if (intent?.getBooleanExtra(EXTRA_FROM_BOOT, false) == true) startedFromBoot = true
         if (pollJob == null || pollJob?.isActive != true) startPollingLoop()
         if (intent?.action == ACTION_STATUS_NOW) scope.launch {
             saveMonitorState("Citire in curs...")
@@ -98,16 +100,58 @@ class AgentPollingService : Service() {
                     getSharedPreferences("tda_server", MODE_PRIVATE).edit().putString("monitor_day", java.time.LocalDate.now().toString()).apply()
                     saveMonitorState("Stare trimisa in CRM (${r.serial})")
                 }
-                is BlueCashMonitor.Result.Busy -> saveMonitorState("Amanat: ${r.reason}")
+                is BlueCashMonitor.Result.Busy -> {
+                    // cererea manuala ramane activa: se incearca automat (si la stingerea ecranului) pana reuseste
+                    getSharedPreferences("tda_server", MODE_PRIVATE).edit().remove("monitor_day").apply()
+                    saveMonitorState("Amanat: ${r.reason}")
+                }
                 is BlueCashMonitor.Result.Failed -> saveMonitorState("Eroare: ${r.reason}")
             }
         }
         return START_STICKY
     }
 
+    /**
+     * Stingerea ecranului: aplicatiile de vanzare (Sedona, Freya) pot elibera modulul fiscal cand aparatul intra in repaus.
+     * Daca starea de azi nu a fost trimisa, incercam la cateva secunde dupa stingere.
+     */
+    private val screenOffReceiver = object : android.content.BroadcastReceiver() {
+        override fun onReceive(ctx: android.content.Context?, intent: Intent?) {
+            if (intent?.action != Intent.ACTION_SCREEN_OFF || !InternalFiscalBridge.isAvailable()) return
+            val prefs = getSharedPreferences("tda_server", MODE_PRIVATE)
+            if (prefs.getString("monitor_day", "") == java.time.LocalDate.now().toString()) return
+            scope.launch {
+                for (wait in listOf(10_000L, 30_000L, 90_000L)) {
+                    delay(wait)
+                    when (val r = BlueCashMonitor.runOnce(this@AgentPollingService)) {
+                        is BlueCashMonitor.Result.Sent -> {
+                            if (activeSerial.isBlank()) activeSerial = r.serial
+                            prefs.edit().putString("monitor_day", java.time.LocalDate.now().toString()).apply()
+                            saveMonitorState("Stare trimisa in CRM (${r.serial}) — ecran stins")
+                            return@launch
+                        }
+                        is BlueCashMonitor.Result.Busy -> saveMonitorState("Amanat (ecran stins): ${r.reason}")
+                        is BlueCashMonitor.Result.Failed -> { saveMonitorState("Eroare: ${r.reason}"); return@launch }
+                    }
+                }
+            }
+        }
+    }
+    private var screenReceiverOn = false
+    private var startedFromBoot = false
+
+    override fun onCreate() {
+        super.onCreate()
+        if (InternalFiscalBridge.isAvailable()) {
+            registerReceiver(screenOffReceiver, android.content.IntentFilter(Intent.ACTION_SCREEN_OFF))
+            screenReceiverOn = true
+        }
+    }
+
     private fun startPollingLoop() {
         pollJob = scope.launch {
-            var nextStatusAt = System.currentTimeMillis() + 60_000L   // prima citire la un minut dupa pornire
+            // dupa repornirea aparatului: prima citire imediat, inainte ca aplicatia de vanzare sa ocupe modulul fiscal
+            var nextStatusAt = System.currentTimeMillis() + if (startedFromBoot) 5_000L else 60_000L
             while (isActive) {
                 try {
                     // BlueCash: starea casei in CRM o data pe zi, indiferent de aplicatia de vanzare deschisa
@@ -139,7 +183,7 @@ class AgentPollingService : Service() {
     private fun saveMonitorState(text: String) {
         val t = java.text.SimpleDateFormat("dd.MM HH:mm", java.util.Locale.US).format(java.util.Date())
         getSharedPreferences("tda_server", MODE_PRIVATE).edit().putString("monitor_state", "$t — $text").apply()
-        Log.d(TAG, "Monitor: $text")
+        Log.w(TAG, "Monitor: $text")
     }
 
     private fun pollOnce(serial: String) {
@@ -236,6 +280,7 @@ class AgentPollingService : Service() {
     }
 
     override fun onDestroy() {
+        if (screenReceiverOn) try { unregisterReceiver(screenOffReceiver) } catch (_: Throwable) {}
         pollJob?.cancel(); pollJob = null
         scope.cancel()
         super.onDestroy()
