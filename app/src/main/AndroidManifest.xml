@@ -26,13 +26,13 @@
 
     <application
         android:name=".AmefMonitorApp"
-        android:allowBackup="true"
+        android:allowBackup="false"
         android:icon="@mipmap/ic_launcher"
         android:label="@string/app_name"
         android:roundIcon="@mipmap/ic_launcher_round"
         android:supportsRtl="true"
         android:requestLegacyExternalStorage="true"
-        android:usesCleartextTraffic="true"
+        android:usesCleartextTraffic="false"
         android:theme="@style/Theme.AmefMonitor">
 
         <!-- Libraria de sistem pentru fiscal-ul intern (BC50, DP-25X, etc).

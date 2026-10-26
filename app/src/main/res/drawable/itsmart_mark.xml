@@ -1,0 +1,23 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Marca IT Smart Client: acelasi stil ca TDA (patrat rotunjit albastru, litere in culorile logo-ului) -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:aapt="http://schemas.android.com/aapt"
+    android:width="96dp" android:height="96dp"
+    android:viewportWidth="108" android:viewportHeight="108">
+    <path android:pathData="M24,4 L84,4 A20,20 0 0 1 104,24 L104,84 A20,20 0 0 1 84,104 L24,104 A20,20 0 0 1 4,84 L4,24 A20,20 0 0 1 24,4 Z">
+        <aapt:attr name="android:fillColor">
+            <gradient android:type="linear"
+                android:startX="4" android:startY="104" android:endX="104" android:endY="4"
+                android:startColor="#FF062C9E" android:centerColor="#FF0B3FD6" android:endColor="#FF0A8FD8" />
+        </aapt:attr>
+    </path>
+    <!-- I -->
+    <path android:pathData="M36,34 L36,70"
+        android:strokeColor="#FF4FC3FF" android:strokeWidth="9" android:strokeLineCap="round" />
+    <!-- T -->
+    <path android:pathData="M54,34 L80,34 M67,34 L67,70"
+        android:strokeColor="#FF19D3F5" android:strokeWidth="9" android:strokeLineCap="round" android:strokeLineJoin="round" />
+    <!-- accent verde -->
+    <path android:pathData="M36,84 L80,84"
+        android:strokeColor="#FF2EE08A" android:strokeWidth="5" android:strokeLineCap="round" />
+</vector>

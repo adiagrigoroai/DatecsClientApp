@@ -32,6 +32,8 @@ import androidx.core.content.ContextCompat
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import kotlinx.coroutines.launch
+import androidx.compose.foundation.Image
+import androidx.compose.ui.res.painterResource
 import com.itsmart.datecs.client.ui.navigation.Screen
 import com.itsmart.datecs.client.ui.screens.*
 import com.itsmart.datecs.client.ui.theme.AppColors
@@ -294,23 +296,22 @@ fun MainContent(viewModel: MainViewModel = viewModel()) {
 
     Scaffold(
         topBar = {
-            Surface(
-                color = Color.Transparent,
-                modifier = Modifier.fillMaxWidth().background(Brush.linearGradient(listOf(AppColors.PrimaryDark, AppColors.Primary)))
-            ) {
+            Column(Modifier.fillMaxWidth().background(Color.White).statusBarsPadding()) {
                 Row(
-                    modifier = Modifier.padding(horizontal = 16.dp, vertical = 12.dp),
+                    modifier = Modifier.padding(horizontal = 14.dp, vertical = 10.dp),
                     verticalAlignment = Alignment.CenterVertically
                 ) {
+                    Image(painterResource(R.drawable.itsmart_mark), null, modifier = Modifier.size(34.dp))
+                    Spacer(modifier = Modifier.width(10.dp))
                     Column(modifier = Modifier.weight(1f)) {
-                        Text("IT Smart Client", color = Color.White, fontWeight = FontWeight.W800, fontSize = 16.sp)
+                        Text("IT Smart Client", color = AppColors.PrimaryDark, fontWeight = FontWeight.W800, fontSize = 17.sp)
                         if (connected) {
                             Text(
                                 "${deviceState.devName} \u2022 ${deviceState.serialNumber}",
-                                color = Color.White.copy(alpha = 0.8f), fontSize = 10.5.sp
+                                color = AppColors.TextSecondary, fontSize = 11.sp
                             )
                         } else {
-                            Text("Niciun aparat conectat", color = Color.White.copy(alpha = 0.6f), fontSize = 10.5.sp)
+                            Text("Niciun aparat conectat", color = AppColors.TextTertiary, fontSize = 11.sp)
                         }
                     }
                     // Pending revizie indicator
@@ -325,12 +326,13 @@ fun MainContent(viewModel: MainViewModel = viewModel()) {
                         }
                     }
                     // Connection dot
-                    Box(modifier = Modifier.size(12.dp).clip(CircleShape).background(if (connected) Color(0xFF4CAF50) else Color(0xFFEF5350)))
+                    Box(modifier = Modifier.size(12.dp).clip(CircleShape).background(if (connected) AppColors.Success else AppColors.Danger))
                     // Logout
                     IconButton(onClick = { viewModel.logout() }) {
-                        Icon(Icons.Filled.Logout, "Logout", tint = Color.White.copy(alpha = 0.7f), modifier = Modifier.size(20.dp))
+                        Icon(Icons.Filled.Logout, "Logout", tint = AppColors.TextSecondary, modifier = Modifier.size(20.dp))
                     }
                 }
+                Box(Modifier.fillMaxWidth().height(3.dp).background(Brush.horizontalGradient(AppColors.BrandGradient)))
             }
         },
         bottomBar = {

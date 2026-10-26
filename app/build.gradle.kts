@@ -1,6 +1,13 @@
+import java.util.Properties
+
 plugins {
     id("com.android.application")
     id("org.jetbrains.kotlin.android")
+}
+
+val signingProps = Properties().apply {
+    val f = rootProject.file("keystore.properties")
+    if (f.exists()) f.inputStream().use { load(it) }
 }
 
 android {
@@ -15,12 +22,13 @@ android {
         versionName = "1.0.2"
     }
 
+    // Cheia de semnare: keystore.properties (in afara git) — storeFile, storePassword, keyAlias, keyPassword
     signingConfigs {
         create("release") {
-            storeFile = file("release.keystore")
-            storePassword = "itsmart2025"
-            keyAlias = "itsmart"
-            keyPassword = "itsmart2025"
+            storeFile = signingProps.getProperty("storeFile")?.let { rootProject.file(it) }
+            storePassword = signingProps.getProperty("storePassword")
+            keyAlias = signingProps.getProperty("keyAlias")
+            keyPassword = signingProps.getProperty("keyPassword")
         }
     }
 

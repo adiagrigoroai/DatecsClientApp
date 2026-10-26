@@ -61,8 +61,13 @@ object AppUpdateService {
     }
 
     /** Cheama API-ul GitHub, returneaza info despre ultimul release. */
+    /** Pe BlueCash aplicatia se actualizeaza doar prin Datecs Store (ROM-ul nu permite alte instalari). */
+    val isBlueCash: Boolean get() =
+        Regex("(?i)BlueCash|BC[-_]?50").containsMatchIn((android.os.Build.MODEL ?: "") + "|" + (android.os.Build.DEVICE ?: ""))
+
     suspend fun checkForUpdate(): CheckResult = withContext(Dispatchers.IO) {
         val current = BuildConfig.VERSION_NAME
+        if (isBlueCash) return@withContext CheckResult(false, current, null)
         try {
             val conn = (URL(API_URL).openConnection() as HttpURLConnection).apply {
                 requestMethod = "GET"

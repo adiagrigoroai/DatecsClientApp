@@ -65,6 +65,31 @@ class DudeDeviceConnection(private val context: Context) : IDeviceConnection {
                 val inp = inputStream ?: throw IOException("No input stream")
                 val out = outputStream ?: throw IOException("No output stream")
 
+                // BlueCash 50 / 500: modulul fiscal intern raspunde direct pe protocolul FMP-P6X (ca in exemplul
+                // oficial Datecs BC50). Detectarea automata a modelului nu e necesara si poate esua pe socketul intern.
+                if (type == ConnectionType.INTERNAL) {
+                    var dev: FiscalDevice? = null
+                    for (i in 0 until 6) {
+                        val candidate = FMP_P6X_ROU(inp, out)
+                        val ok = try { candidate.command74Variant0Version0(); true } catch (e: Exception) {
+                            Log.w(TAG, "BC50 ping ${i + 1}/6: ${e.message}"); false
+                        }
+                        if (ok) { dev = candidate; break }
+                        Thread.sleep(500)
+                    }
+                    if (dev == null) {
+                        Log.e(TAG, "Modulul fiscal intern nu raspunde")
+                        closeRawConnection()
+                        return@withContext false
+                    }
+                    DatecsFiscalDevice(FiscalException.FPTR_CC_ROMANIA)
+                    DatecsFiscalDevice.setConnectedModel(dev)
+                    fiscalDevice = DatecsFiscalDevice.getConnectedModel()
+                    modelName = if (Regex("(?i)500").containsMatchIn(android.os.Build.MODEL ?: "")) "BC-500" else "BC-50"
+                    Log.d(TAG, "connect() INTERNAL SUCCESS model=$modelName")
+                    return@withContext true
+                }
+
                 // Step 2: Detect device model
                 Log.d(TAG, "Starting model detection...")
                 val detector = FDModelDetector(inp, out)

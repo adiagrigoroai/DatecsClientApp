@@ -36,7 +36,7 @@ fun LoginScreen(
     Box(
         modifier = Modifier
             .fillMaxSize()
-            .background(Brush.verticalGradient(listOf(AppColors.PrimaryDark, AppColors.Primary, AppColors.PrimaryLight)))
+            .background(AppColors.Background)
     ) {
         Column(
             modifier = Modifier
@@ -46,25 +46,31 @@ fun LoginScreen(
             horizontalAlignment = Alignment.CenterHorizontally
         ) {
             // Logo/Title
+            androidx.compose.foundation.Image(
+                androidx.compose.ui.res.painterResource(com.itsmart.datecs.client.R.drawable.itsmart_mark), null,
+                modifier = Modifier.size(84.dp).padding(bottom = 12.dp)
+            )
             Text(
                 "IT Smart Client",
-                color = Color.White,
+                color = AppColors.PrimaryDark,
                 fontSize = 28.sp,
-                fontWeight = FontWeight.W800,
-                letterSpacing = 1.sp
+                fontWeight = FontWeight.W800
             )
             Text(
-                "Monitorizare aparate fiscale",
-                color = Color.White.copy(alpha = 0.75f),
-                fontSize = 12.sp,
-                modifier = Modifier.padding(bottom = 40.dp)
+                "Revizie, rapoarte si export XML pentru casele de marcat",
+                color = AppColors.TextSecondary,
+                fontSize = 13.sp,
+                textAlign = TextAlign.Center,
+                modifier = Modifier.padding(top = 4.dp, bottom = 14.dp)
             )
+            Box(Modifier.width(120.dp).height(3.dp).background(Brush.horizontalGradient(AppColors.BrandGradient), RoundedCornerShape(2.dp)))
+            Spacer(modifier = Modifier.height(28.dp))
 
             // Login card
             Surface(
-                shape = RoundedCornerShape(16.dp),
+                shape = RoundedCornerShape(18.dp),
                 color = Color.White,
-                shadowElevation = 8.dp,
+                shadowElevation = 2.dp,
                 modifier = Modifier.fillMaxWidth()
             ) {
                 Column(
@@ -152,7 +158,7 @@ fun LoginScreen(
             Spacer(modifier = Modifier.height(24.dp))
             Text(
                 "cloud.itsmart.ro",
-                color = Color.White.copy(alpha = 0.5f),
+                color = AppColors.TextTertiary,
                 fontSize = 10.sp
             )
         }

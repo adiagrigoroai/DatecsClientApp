@@ -208,11 +208,17 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 }
                 val (code, location, sessionCookie) = result
                 if (code == -1) {
-                    val prefs = getApplication<Application>().getSharedPreferences("datecs_client", 0)
-                    prefs.edit().putString("auth_token", "offline").putString("auth_user", user).apply()
-                    _username.value = user; _isLoggedIn.value = true
-                    addLog("AUTH", "Login OFFLINE", "Server indisponibil, mod offline", true)
-                    showToast("Mod offline — server indisponibil", "warning")
+                    // fara internet: doar un cont care s-a autentificat online pe acest aparat (hash local)
+                    if (offlineCredentialsMatch(user, password)) {
+                        val prefs = getApplication<Application>().getSharedPreferences("datecs_client", 0)
+                        prefs.edit().putString("auth_token", "offline").putString("auth_user", user).apply()
+                        _username.value = user; _isLoggedIn.value = true
+                        addLog("AUTH", "Login OFFLINE", "Server indisponibil, cont verificat local", true)
+                        showToast("Mod offline — server indisponibil", "warning")
+                    } else {
+                        _loginError.value = "Fara conexiune la cloud.itsmart.ro. Prima autentificare pe acest aparat necesita internet."
+                        addLog("AUTH", "Login OFFLINE refuzat", "cont neverificat online pe acest aparat", false)
+                    }
                 } else if (code == 302 && location.contains("error")) {
                     val errorMsg = try { java.net.URLDecoder.decode(location.substringAfter("error=", "").substringBefore("&"), "UTF-8") } catch (_: Exception) { "" }
                     _loginError.value = errorMsg.ifEmpty { "Email sau parola incorecta" }
@@ -221,27 +227,43 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                     val token = sessionCookie.ifEmpty { "session_ok" }
                     val prefs = getApplication<Application>().getSharedPreferences("datecs_client", 0)
                     prefs.edit().putString("auth_token", token).putString("auth_user", user).apply()
+                    rememberOfflineCredentials(user, password)
                     _username.value = user; _isLoggedIn.value = true
-                    addLog("AUTH", "Login OK", "user=$user cookie=${sessionCookie.take(30)}", true)
-                } else if (code in 200..299) {
-                    val prefs = getApplication<Application>().getSharedPreferences("datecs_client", 0)
-                    prefs.edit().putString("auth_token", "ok").putString("auth_user", user).apply()
-                    _username.value = user; _isLoggedIn.value = true
-                    addLog("AUTH", "Login OK", "user=$user HTTP $code", true)
+                    addLog("AUTH", "Login OK", "user=$user", true)
                 } else {
+                    // cloud.itsmart.ro raspunde cu redirect si la succes, si la eroare: orice altceva nu e autentificare
                     _loginError.value = "Eroare server (HTTP $code)"
                     addLog("AUTH", "Login ESUAT", "HTTP $code loc=$location", false)
                 }
             } catch (e: Exception) {
-                val prefs = getApplication<Application>().getSharedPreferences("datecs_client", 0)
-                prefs.edit().putString("auth_token", "offline").putString("auth_user", user).apply()
-                _username.value = user; _isLoggedIn.value = true
-                addLog("AUTH", "Login FALLBACK", "Eroare: ${e.message}, mod offline", false)
-                showToast("Login offline (eroare: ${e.message?.take(50)})", "warning")
+                _loginError.value = "Autentificare esuata: ${e.message?.take(80)}"
+                addLog("AUTH", "Login ESUAT", e.message, false)
             }
             _loginLoading.value = false
         }
     }
+
+    /** Dupa un login online reusit: hash PBKDF2 (cu sare) pentru autentificarea fara internet. Parola nu se salveaza. */
+    private fun rememberOfflineCredentials(user: String, password: String) {
+        val salt = ByteArray(16).also { java.security.SecureRandom().nextBytes(it) }
+        getApplication<Application>().getSharedPreferences("datecs_client", 0).edit()
+            .putString("offline_user", user.trim().lowercase())
+            .putString("offline_salt", android.util.Base64.encodeToString(salt, android.util.Base64.NO_WRAP))
+            .putString("offline_hash", android.util.Base64.encodeToString(pbkdf2(password, salt), android.util.Base64.NO_WRAP))
+            .apply()
+    }
+
+    private fun offlineCredentialsMatch(user: String, password: String): Boolean {
+        val p = getApplication<Application>().getSharedPreferences("datecs_client", 0)
+        if (p.getString("offline_user", "") != user.trim().lowercase()) return false
+        val salt = android.util.Base64.decode(p.getString("offline_salt", "") ?: "", android.util.Base64.NO_WRAP)
+        val hash = android.util.Base64.decode(p.getString("offline_hash", "") ?: "", android.util.Base64.NO_WRAP)
+        return salt.isNotEmpty() && hash.isNotEmpty() && java.security.MessageDigest.isEqual(hash, pbkdf2(password, salt))
+    }
+
+    private fun pbkdf2(password: String, salt: ByteArray): ByteArray =
+        javax.crypto.SecretKeyFactory.getInstance("PBKDF2WithHmacSHA256")
+            .generateSecret(javax.crypto.spec.PBEKeySpec(password.toCharArray(), salt, 20_000, 256)).encoded
 
     fun logout() {
         val prefs = getApplication<Application>().getSharedPreferences("datecs_client", 0)
@@ -439,7 +461,8 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             _deviceState.value = _deviceState.value.copy(
                 devName = connection.modelName.ifEmpty { devName90 },
                 model = connection.modelName.ifEmpty { _deviceState.value.model },
-                devType = allFields90["DevType"] ?: _deviceState.value.devType,
+                // BlueCash 50/500 raporteaza DevType=2, dar sunt case de marcat
+                devType = if (connection.modelName.startsWith("BC-")) "1" else allFields90["DevType"] ?: _deviceState.value.devType,
                 serialNumber = serialNum.ifEmpty { _deviceState.value.serialNumber },
                 fiscalNumber = fiscalNum.ifEmpty { _deviceState.value.fiscalNumber },
                 fmNumber = fmNum.ifEmpty { fiscalNum },
@@ -1163,6 +1186,22 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         downloadAnafFiles(from, to, clientName, basePath)
     }
 
+    /**
+     * Folderul de salvare: cel ales de utilizator daca se poate scrie in el, altfel folderul aplicatiei
+     * (Android 10+ nu permite scrierea directa in Documents fara permisiuni speciale; folderul aplicatiei nu cere permisiuni).
+     */
+    private fun writableBasePath(chosen: String): String {
+        if (chosen.isNotBlank()) {
+            val f = File(chosen)
+            if ((f.isDirectory || f.mkdirs()) && f.canWrite()) return chosen
+            addLog("ANAF", "Folderul ales nu permite scrierea", chosen, false)
+        }
+        val app = getApplication<Application>()
+        val dir = File(app.getExternalFilesDir(android.os.Environment.DIRECTORY_DOCUMENTS) ?: app.filesDir, "DatecsANAF")
+        dir.mkdirs()
+        return dir.absolutePath
+    }
+
     fun downloadAnafFiles(from: String, to: String, clientName: String, basePath: String) {
         viewModelScope.launch {
             _anafDownloading.value = true; _anafDownloadProgress.value = "Initializare..."; _lastAnafResult.value = null
@@ -1171,7 +1210,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             try {
                 val downloader = AnafDownloader(connection)
                 val result = downloader.downloadAnafFiles(from, to, clientName = clientName,
-                    serialNumber = _deviceState.value.serialNumber, basePath = basePath.ifEmpty { null }
+                    serialNumber = _deviceState.value.serialNumber, basePath = writableBasePath(basePath)
                 ) { current, total, fileName -> _anafDownloadProgress.value = "Descarcare $current/$total: $fileName" }
                 _lastAnafResult.value = result
                 if (result.success) { showToast("${result.fileCount} fisiere descarcate!", "success"); autoCloudUpload() }

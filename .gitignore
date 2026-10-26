@@ -15,3 +15,8 @@ app/release.keystore
 # APK outputs locali
 *.apk
 !app/build/outputs/apk/release/*.apk
+
+# Parolele cheii de semnare
+keystore.properties
+*.jks
+*.keystore

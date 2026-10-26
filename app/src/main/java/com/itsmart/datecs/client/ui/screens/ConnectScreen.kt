@@ -40,6 +40,16 @@ fun ConnectScreen(viewModel: MainViewModel, connected: Boolean, onConnected: () 
     val btDevices = scannedDevices.filter { it.type == ConnectionType.BLUETOOTH }
     val internalDevices = scannedDevices.filter { it.type == ConnectionType.INTERNAL }
 
+    // Pe BlueCash 50/500: conectare automata (o data) la modulul fiscal intern
+    var autoInternalTried by androidx.compose.runtime.saveable.rememberSaveable { mutableStateOf(false) }
+    LaunchedEffect(internalDevices.isNotEmpty(), connected, isConnecting) {
+        val dev = internalDevices.firstOrNull()
+        if (dev != null && !connected && !isConnecting && !autoInternalTried) {
+            autoInternalTried = true
+            viewModel.connectDevice(dev.address, dev.name, ConnectionType.INTERNAL)
+        }
+    }
+
     // LAN connection fields
     var lanIp by remember { mutableStateOf(viewModel.loadLanIp()) }
     var lanPort by remember { mutableStateOf(viewModel.loadLanPort()) }
