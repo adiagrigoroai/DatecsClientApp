@@ -33,6 +33,8 @@ class DudeDeviceConnection(private val context: Context) : IDeviceConnection {
         private const val TAG = "DudeDevice"
         /** BlueCash: modulul intern se elibereaza dupa atatea ms fara comenzi. */
         private const val INTERNAL_IDLE_MS = 4_000L
+        /** BlueCash: aplicatiile de vanzare care tin modulul deschis (ex. Sedona POS) blocheaza accesul. */
+        const val BUSY_MSG = "Modulul fiscal este folosit de alta aplicatie de vanzare (ex. Sedona, Freya). Inchideti-o si reincercati."
         private val SPP_UUID = UUID.fromString("00001101-0000-1000-8000-00805F9B34FB")
         private const val DATECS_USB_VID = 65520
         private const val FTDI_USB_VID = 1027
@@ -90,7 +92,7 @@ class DudeDeviceConnection(private val context: Context) : IDeviceConnection {
             }.also { fiscalDevice = it }
         }
         if (dev == null) {
-            lastAccessError = "Modulul fiscal este folosit de alta aplicatie"
+            lastAccessError = BUSY_MSG
             activeOps.decrementAndGet()
         } else lastAccessError = ""
         return dev
@@ -305,7 +307,7 @@ class DudeDeviceConnection(private val context: Context) : IDeviceConnection {
             throw IOException("Device-ul nu are fiscal intern (com.android.fiscal lipseste)")
         }
         val session = InternalFiscalBridge.open(context)
-            ?: throw IOException("Nu pot deschide fiscal-ul intern. Verifica daca FiscalService ruleaza.")
+            ?: throw IOException(BUSY_MSG)
         internalSession = session
         inputStream = session.inputStream
         outputStream = session.outputStream

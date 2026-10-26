@@ -42,6 +42,8 @@ class AgentPollingService : Service() {
         const val EXTRA_PAYLOAD_JSON = "payload_json"
 
         const val ACTION_START = "start"
+        /** BlueCash: citire si trimitere a starii imediat (buton in ecranul Status). */
+        const val ACTION_STATUS_NOW = "status_now"
         const val ACTION_STOP = "stop"
         const val ACTION_SET_SERIAL = "set_serial"
         const val EXTRA_NEW_SERIAL = "new_serial"
@@ -88,6 +90,18 @@ class AgentPollingService : Service() {
         }
 
         if (pollJob == null || pollJob?.isActive != true) startPollingLoop()
+        if (intent?.action == ACTION_STATUS_NOW) scope.launch {
+            saveMonitorState("Citire in curs...")
+            when (val r = BlueCashMonitor.runOnce(this@AgentPollingService)) {
+                is BlueCashMonitor.Result.Sent -> {
+                    if (activeSerial.isBlank()) activeSerial = r.serial
+                    getSharedPreferences("tda_server", MODE_PRIVATE).edit().putString("monitor_day", java.time.LocalDate.now().toString()).apply()
+                    saveMonitorState("Stare trimisa in CRM (${r.serial})")
+                }
+                is BlueCashMonitor.Result.Busy -> saveMonitorState("Amanat: ${r.reason}")
+                is BlueCashMonitor.Result.Failed -> saveMonitorState("Eroare: ${r.reason}")
+            }
+        }
         return START_STICKY
     }
 

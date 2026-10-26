@@ -316,7 +316,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                     // chiar daca aplicatia trece in background.
                     startAgentPollingForSerial(_deviceState.value.serialNumber)
                 } else {
-                    showToast("Conectare esuata! Verificati aparatul.", "error")
+                    showToast(if (type == ConnectionType.INTERNAL) DudeDeviceConnection.BUSY_MSG else "Conectare esuata! Verificati aparatul.", "error")
                 }
             } catch (e: Exception) {
                 showToast("Eroare: ${e.message}", "error")

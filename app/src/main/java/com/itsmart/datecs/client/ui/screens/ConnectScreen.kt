@@ -104,6 +104,8 @@ fun ConnectScreen(viewModel: MainViewModel, connected: Boolean, onConnected: () 
             }
         }
 
+        MonitorCard()
+
         // LAN section — IP/Port input at top, history below
         SectionCard(title = "LAN / WiFi (TCP/IP)", accent = AppColors.Warning) {
             // IP + Port input fields (always visible)

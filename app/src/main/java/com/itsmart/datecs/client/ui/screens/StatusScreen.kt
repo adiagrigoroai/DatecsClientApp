@@ -105,6 +105,8 @@ fun StatusScreen(viewModel: MainViewModel, deviceState: DeviceState, isLoading: 
             StatusRow("Data Service", deviceState.serviceDate.ifEmpty { "---" }, mono = true)
         }
 
+        MonitorCard()
+
         // === REFRESH ===
         Spacer(modifier = Modifier.height(8.dp))
         ActionButton(
@@ -112,5 +114,37 @@ fun StatusScreen(viewModel: MainViewModel, deviceState: DeviceState, isLoading: 
             onClick = { viewModel.refreshStatus() },
             full = true, outline = true, enabled = !isLoading
         )
+    }
+}
+
+/** BlueCash: starea monitorizarii automate (o data pe zi in CRM) + trimitere manuala. */
+@Composable
+fun MonitorCard() {
+    if (com.itsmart.datecs.client.device.InternalFiscalBridge.isAvailable()) {
+        val ctx = androidx.compose.ui.platform.LocalContext.current
+        var monitorState by androidx.compose.runtime.remember { androidx.compose.runtime.mutableStateOf("") }
+        androidx.compose.runtime.LaunchedEffect(Unit) {
+            while (true) {
+                monitorState = ctx.getSharedPreferences("tda_server", 0).getString("monitor_state", "") ?: ""
+                kotlinx.coroutines.delay(3000)
+            }
+        }
+        Spacer(modifier = Modifier.height(8.dp))
+        SectionCard(title = "Monitorizare automata", accent = AppColors.Success) {
+            Text("Starea casei se trimite in CRM o data pe zi, in fundal, indiferent de aplicatia de vanzare deschisa. " +
+                "Daca modulul fiscal e ocupat sau are un bon deschis, se reincearca la 10 minute.",
+                fontSize = 12.sp, color = AppColors.TextSecondary)
+            Spacer(modifier = Modifier.height(6.dp))
+            StatusRow("Ultima incercare", monitorState.ifEmpty { "---" })
+            Spacer(modifier = Modifier.height(8.dp))
+            ActionButton(
+                text = "Trimite starea acum",
+                onClick = {
+                    ctx.startForegroundService(android.content.Intent(ctx, com.itsmart.datecs.client.service.AgentPollingService::class.java)
+                        .setAction(com.itsmart.datecs.client.service.AgentPollingService.ACTION_STATUS_NOW))
+                },
+                full = true, outline = true
+            )
+        }
     }
 }
