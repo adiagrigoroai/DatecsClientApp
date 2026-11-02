@@ -40,7 +40,7 @@ fun HomeScreen(viewModel: MainViewModel, connected: Boolean, wide: Boolean, onOp
         // imaginea principala, pe albastru (continua antetul)
         Row(Modifier.fillMaxWidth().clip(RoundedCornerShape(22.dp)).background(HeaderBrush).padding(18.dp),
             verticalAlignment = Alignment.CenterVertically) {
-            Image(painterResource(R.drawable.hero_cloud), null, modifier = Modifier.size(if (wide) 150.dp else 118.dp))
+            Image(painterResource(R.drawable.casa_datecs), null, modifier = Modifier.width(if (wide) 220.dp else 150.dp))
             Spacer(Modifier.width(16.dp))
             Column(Modifier.weight(1f)) {
                 Text("Transfer automat XML si mentenanta pentru aparatele tale fiscale.", color = Color.White,

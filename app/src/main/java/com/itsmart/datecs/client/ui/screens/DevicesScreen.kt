@@ -200,16 +200,8 @@ private fun ConnectedPanel(viewModel: MainViewModel, onOpen: (Screen) -> Unit) {
     val (client, _, _) = remember(ds.headers, ds.cifNumber) { viewModel.parseHeaderInfo() }
 
     SoftCard(padding = 18.dp) {
-        Box(Modifier.fillMaxWidth(), contentAlignment = Alignment.Center) {
-            Box(Modifier.size(170.dp).clip(CircleShape).background(Brush.radialGradient(listOf(Color(0xFFD9F7E6), Color.White))),
-                contentAlignment = Alignment.Center) {
-                Image(painterResource(R.drawable.hero_cloud), null, modifier = Modifier.size(120.dp))
-            }
-            Box(Modifier.align(Alignment.BottomCenter).offset(x = 48.dp).size(40.dp).clip(CircleShape).background(Color.White).padding(3.dp)
-                .clip(CircleShape).background(AppColors.Success), contentAlignment = Alignment.Center) {
-                Icon(Icons.Filled.Check, null, tint = Color.White, modifier = Modifier.size(26.dp))
-            }
-        }
+        // casa din macheta, cu cercul verde si bifa de conectare
+        Image(painterResource(R.drawable.casa_datecs), null, modifier = Modifier.fillMaxWidth().height(190.dp))
         Text("Aparat conectat", fontSize = 24.sp, fontWeight = FontWeight.W800, color = AppColors.TextPrimary, textAlign = TextAlign.Center,
             modifier = Modifier.fillMaxWidth().padding(top = 8.dp, bottom = 10.dp))
         InfoLine(Icons.Filled.Person, "Client:", client.ifBlank { "—" })
