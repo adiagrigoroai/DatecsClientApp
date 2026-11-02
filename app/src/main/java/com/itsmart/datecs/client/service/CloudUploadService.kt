@@ -185,6 +185,26 @@ class CloudUploadService(context: Context) {
         }
     }
 
+    /** Emailul contabilului firmei din cloud (primeste automat fisierele XML urcate); null = eroare. */
+    suspend fun accountant(newEmail: String? = null): Pair<String?, String> = withContext(Dispatchers.IO) {
+        val t = token().ifEmpty { return@withContext null to "Aplicatia nu este asociata cu cloud.itsmart.ro" }
+        try {
+            val c = (URL("$BASE_URL/api/v2/accountant").openConnection() as HttpURLConnection).apply {
+                connectTimeout = 15_000; readTimeout = 15_000
+                setRequestProperty("Authorization", "Bearer $t")
+                setRequestProperty("User-Agent", "ITSmartClient/${BuildConfig.VERSION_NAME}")
+                if (newEmail != null) {
+                    requestMethod = "POST"; doOutput = true
+                    setRequestProperty("Content-Type", "application/x-www-form-urlencoded")
+                }
+            }
+            if (newEmail != null) c.outputStream.use { it.write(("email=" + URLEncoder.encode(newEmail, "UTF-8")).toByteArray()) }
+            val (code, body) = read(c)
+            if (code !in 200..299) return@withContext null to (if (code == 401) "Firma nu este activa in cloud" else detail(body))
+            JSONObject(body).optString("email") to ""
+        } catch (e: Exception) { null to (e.message ?: "fara conexiune") }
+    }
+
     /** Fisierele firmei din cloud (cele mai noi primele); null = eroare (vezi mesajul). */
     suspend fun listFiles(): Pair<List<CloudFile>?, String> = withContext(Dispatchers.IO) {
         val t = token().ifEmpty { return@withContext null to "Aplicatia nu este asociata cu cloud.itsmart.ro" }

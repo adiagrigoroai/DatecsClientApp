@@ -212,7 +212,8 @@ fun MainContent(viewModel: MainViewModel = viewModel()) {
             isLoading = loginLoading,
             errorMessage = loginError,
             onLogin = { user, pass -> viewModel.login(user, pass) },
-            onEnroll = { showEnroll = true }
+            onEnroll = { showEnroll = true },
+            onPairCode = { viewModel.loginWithPairCode(it) }
         )
         return
     }

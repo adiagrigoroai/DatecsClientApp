@@ -29,8 +29,28 @@ fun LoginScreen(
     isLoading: Boolean,
     errorMessage: String,
     onLogin: (String, String) -> Unit,
-    onEnroll: () -> Unit = {}
+    onEnroll: () -> Unit = {},
+    onPairCode: (String) -> Unit = {}
 ) {
+    var showCode by remember { mutableStateOf(false) }
+    var code by remember { mutableStateOf("") }
+    if (showCode) {
+        AlertDialog(onDismissRequest = { showCode = false },
+            title = { Text("Cod de asociere") },
+            text = {
+                Column {
+                    Text("Codul se genereaza in cloud.itsmart.ro, la firma: Aparate → Aplicatii asociate → Genereaza cod de asociere.",
+                        fontSize = 13.sp, color = AppColors.TextSecondary)
+                    Spacer(Modifier.height(10.dp))
+                    OutlinedTextField(value = code, onValueChange = { code = it.uppercase().take(9) }, singleLine = true,
+                        label = { Text("Cod (ex. ABCD-2345)") }, modifier = Modifier.fillMaxWidth(),
+                        textStyle = LocalTextStyle.current.copy(fontSize = 18.sp, fontWeight = FontWeight.W700))
+                }
+            },
+            confirmButton = { TextButton(enabled = code.count { it.isLetterOrDigit() } == 8,
+                onClick = { showCode = false; onPairCode(code) }) { Text("Intra", fontWeight = FontWeight.W700) } },
+            dismissButton = { TextButton(onClick = { showCode = false }) { Text("Renunta") } })
+    }
     var username by remember { mutableStateOf("") }
     var password by remember { mutableStateOf("") }
     var showPassword by remember { mutableStateOf(false) }
@@ -158,7 +178,10 @@ fun LoginScreen(
                 }
             }
 
-            TextButton(onClick = onEnroll, modifier = Modifier.padding(top = 12.dp)) {
+            TextButton(onClick = { showCode = true }, modifier = Modifier.padding(top = 8.dp)) {
+                Text("Am un cod de asociere", color = AppColors.Primary, fontWeight = FontWeight.W700, fontSize = 14.sp)
+            }
+            TextButton(onClick = onEnroll) {
                 Text("Nu aveti cont? Inregistrati firma", color = AppColors.Primary, fontWeight = FontWeight.W700, fontSize = 14.sp)
             }
             Spacer(modifier = Modifier.height(12.dp))

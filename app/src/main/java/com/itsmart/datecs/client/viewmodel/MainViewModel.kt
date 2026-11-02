@@ -153,6 +153,30 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         _autoUpload.value = on
     }
 
+    /** Emailul contabilului (Setari): cloud-ul ii trimite automat fisierele XML urcate. */
+    private val _accountantEmail = MutableStateFlow("")
+    val accountantEmail: StateFlow<String> = _accountantEmail.asStateFlow()
+    private val _accountantMsg = MutableStateFlow("")
+    val accountantMsg: StateFlow<String> = _accountantMsg.asStateFlow()
+
+    fun loadAccountant() {
+        viewModelScope.launch {
+            val (e, err) = cloud.accountant()
+            if (e != null) _accountantEmail.value = e
+            _accountantMsg.value = err
+        }
+    }
+
+    fun saveAccountant(email: String) {
+        viewModelScope.launch {
+            _accountantMsg.value = "Se salveaza..."
+            val (e, err) = cloud.accountant(email.trim())
+            if (e != null) { _accountantEmail.value = e; _accountantMsg.value = if (e.isBlank()) "Trimiterea la contabil este oprita" else "Salvat" }
+            else _accountantMsg.value = err
+            addLog("CLOUD", "Email contabil", e ?: err, e != null)
+        }
+    }
+
     // Fisierele firmei din cloud (ecranul Fisiere)
     private val _cloudFiles = MutableStateFlow<List<com.itsmart.datecs.client.service.CloudUploadService.CloudFile>>(emptyList())
     val cloudFiles: StateFlow<List<com.itsmart.datecs.client.service.CloudUploadService.CloudFile>> = _cloudFiles.asStateFlow()
@@ -201,6 +225,8 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         // asocierea poate fi revocata din portal: se verifica la pornire (fara internet ramane cum era)
         // (instalarile inrolate din aplicatie au firma inactiva pana la plata: starea lor vine din refreshAccount)
         if (cloud.enrolled) { _isLoggedIn.value = true; _username.value = cloud.cachedAccount().email; refreshAccount() }
+        else if (pairLogin && _cloudLink.value.paired) { _isLoggedIn.value = true; _username.value = _cloudLink.value.companyName
+            viewModelScope.launch { cloud.whoami(); _cloudLink.value = cloud.link(); if (!_cloudLink.value.paired) logout() } }
         else if (_cloudLink.value.paired) viewModelScope.launch { cloud.whoami(); _cloudLink.value = cloud.link() }
     }
 
@@ -356,7 +382,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         val prefs = getApplication<Application>().getSharedPreferences("datecs_client", 0)
         prefs.edit().remove("auth_token").remove("auth_user").apply()
         // aparatul inrolat din aplicatie nu are parola: iesirea inseamna renuntarea la inrolare (se poate relua)
-        if (cloud.enrolled) { cloud.forget(); _cloudLink.value = cloud.link(); _account.value = null }
+        if (cloud.enrolled || pairLogin) { cloud.forget(); _cloudLink.value = cloud.link(); _account.value = null; pairLogin = false }
         _isLoggedIn.value = false; _username.value = ""
     }
 
@@ -531,7 +557,8 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             }
 
             val headers = mutableListOf<String>()
-            for (i in 0..5) { try { headers.add(connection.cmd255Read("Header", i.toString())) } catch (_: Exception) { headers.add("") } }
+            // "^" = litera urmatoare cu dubla latime (antet DP-05L etc.): doar formatare de tiparire, nu text
+            for (i in 0..5) { try { headers.add(connection.cmd255Read("Header", i.toString()).replace("^", "").trim()) } catch (_: Exception) { headers.add("") } }
 
             // === CIF ROBUST (port din ServiceUtility) ===
             val cifNumber = readCifRobust(headers)
@@ -1311,6 +1338,30 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     // ==================== CLOUD (asociere + upload) ====================
 
     /** Asociere cu codul generat in cloud.itsmart.ro; daca exista fisiere descarcate netrimise, se trimit imediat. */
+    /** Intrare in aplicatie doar cu codul de asociere (fara email / parola): firma din cloud e contul aparatului. */
+    private var pairLogin: Boolean
+        get() = getApplication<Application>().getSharedPreferences("datecs_client", 0).getBoolean("pair_login", false)
+        set(v) { getApplication<Application>().getSharedPreferences("datecs_client", 0).edit().putBoolean("pair_login", v).apply() }
+
+    fun loginWithPairCode(code: String) {
+        if (code.isBlank() || _cloudPairing.value) return
+        viewModelScope.launch {
+            _cloudPairing.value = true; _loginError.value = ""
+            val r = cloud.pair(code)
+            _cloudLink.value = cloud.link()
+            _cloudPairing.value = false
+            if (r.ok) {
+                pairLogin = true
+                addLog("CLOUD", "Intrare cu cod de asociere", r.message, true)
+                _username.value = r.message
+                _isLoggedIn.value = true
+            } else {
+                addLog("CLOUD", "Cod de asociere respins", r.message, false)
+                _loginError.value = r.message
+            }
+        }
+    }
+
     fun pairCloud(code: String) {
         if (code.isBlank() || _cloudPairing.value) return
         viewModelScope.launch {

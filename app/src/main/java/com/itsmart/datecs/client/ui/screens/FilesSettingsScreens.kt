@@ -154,6 +154,28 @@ fun SettingsScreen(viewModel: MainViewModel, wide: Boolean, onOpen: (Screen) -> 
             OutlineButton("Iesire din cont", Icons.Filled.Logout, color = AppColors.Danger) { confirmLogout = true }
         }
     }
+    val accEmail by viewModel.accountantEmail.collectAsStateWithLifecycle()
+    val accMsg by viewModel.accountantMsg.collectAsStateWithLifecycle()
+    var accEdit by remember(accEmail) { mutableStateOf(accEmail) }
+    LaunchedEffect(link.paired) { if (link.paired) viewModel.loadAccountant() }
+    val accountantCard: @Composable ColumnScope.() -> Unit = {
+        if (link.paired) {
+            Section("Contabilitate")
+            SoftCard {
+                Text("Dupa descarcare, fisierele XML ajunse in cloud se trimit automat pe email contabilului (cam la 30 de minute " +
+                    "dupa ultima descarcare, intr-un singur email).", fontSize = 13.sp, color = AppColors.TextSecondary)
+                Spacer(Modifier.height(10.dp))
+                OutlinedTextField(value = accEdit, onValueChange = { accEdit = it.take(200) }, singleLine = true, modifier = Modifier.fillMaxWidth(),
+                    label = { Text("Email contabil (mai multe: separate prin virgula)") }, shape = RoundedCornerShape(14.dp),
+                    leadingIcon = { Icon(Icons.Filled.Email, null, tint = AppColors.TextSecondary) },
+                    keyboardOptions = androidx.compose.foundation.text.KeyboardOptions(keyboardType = androidx.compose.ui.text.input.KeyboardType.Email))
+                Spacer(Modifier.height(10.dp))
+                PrimaryButton("Salveaza", Icons.Filled.Save, enabled = accEdit.trim() != accEmail) { viewModel.saveAccountant(accEdit) }
+                if (accMsg.isNotBlank()) Text(accMsg, fontSize = 12.sp, modifier = Modifier.padding(top = 8.dp),
+                    color = if (accMsg == "Salvat" || accMsg.startsWith("Se ")) AppColors.Success else AppColors.TextSecondary)
+            }
+        }
+    }
     val cloud: @Composable ColumnScope.() -> Unit = {
         Section("Cloud itsmart.ro")
         SoftCard {
@@ -187,12 +209,12 @@ fun SettingsScreen(viewModel: MainViewModel, wide: Boolean, onOpen: (Screen) -> 
     }
     if (wide) {
         Row(Modifier.fillMaxSize().padding(16.dp), horizontalArrangement = Arrangement.spacedBy(16.dp)) {
-            Column(Modifier.weight(1f).verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(10.dp), content = cloud)
+            Column(Modifier.weight(1f).verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(10.dp)) { cloud(); accountantCard() }
             Column(Modifier.weight(1f).verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(10.dp), content = account)
         }
     } else {
         Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-            cloud(); account()
+            cloud(); accountantCard(); account()
         }
     }
 }

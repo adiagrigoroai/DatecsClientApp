@@ -225,7 +225,7 @@ private fun ConnectedPanel(viewModel: MainViewModel, onOpen: (Screen) -> Unit) {
     OutlineButton("Exporta acum XML", Icons.Filled.Upload) { onOpen(Screen.Export) }
     Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
         FilledTonalButton(onClick = { viewModel.refreshStatus() }, modifier = Modifier.weight(1f).height(48.dp), shape = RoundedCornerShape(14.dp)) {
-            Icon(Icons.Filled.MonitorHeart, null, modifier = Modifier.size(18.dp)); Spacer(Modifier.width(6.dp)); Text("Test conexiune", fontWeight = FontWeight.W700, color = AppColors.Primary)
+            Icon(Icons.Filled.MonitorHeart, null, modifier = Modifier.size(18.dp)); Spacer(Modifier.width(6.dp)); Text("Test", fontWeight = FontWeight.W700, color = AppColors.Primary)
         }
         FilledTonalButton(onClick = { onOpen(Screen.Maintenance) }, modifier = Modifier.weight(1f).height(48.dp), shape = RoundedCornerShape(14.dp)) {
             Icon(Icons.Filled.Handyman, null, modifier = Modifier.size(18.dp)); Spacer(Modifier.width(6.dp)); Text("Mentenanta", fontWeight = FontWeight.W700, color = AppColors.Primary)
