@@ -55,6 +55,9 @@ class CloudUploadService(context: Context) {
         val active get() = status == "active"
     }
 
+    /** Un fisier din cloud (lista /api/list_files a firmei). */
+    data class CloudFile(val id: Long, val name: String, val size: Long, val type: String, val amef: String, val uploadedAt: String)
+
     data class UploadResult(val ok: Boolean, val uploaded: Int = 0, val skipped: Int = 0, val error: String = "",
                             val unauthorized: Boolean = false)
 
@@ -180,6 +183,26 @@ class CloudUploadService(context: Context) {
             Log.w(TAG, "asociere $method: ${e.message}")
             Result(false, e.message ?: "fara conexiune")
         }
+    }
+
+    /** Fisierele firmei din cloud (cele mai noi primele); null = eroare (vezi mesajul). */
+    suspend fun listFiles(): Pair<List<CloudFile>?, String> = withContext(Dispatchers.IO) {
+        val t = token().ifEmpty { return@withContext null to "Aplicatia nu este asociata cu cloud.itsmart.ro" }
+        try {
+            val c = (URL("$BASE_URL/api/list_files").openConnection() as HttpURLConnection).apply {
+                connectTimeout = 15_000; readTimeout = 30_000
+                setRequestProperty("Authorization", "Bearer $t")
+                setRequestProperty("User-Agent", "ITSmartClient/${BuildConfig.VERSION_NAME}")
+            }
+            val (code, body) = read(c)
+            if (code !in 200..299) return@withContext null to (if (code == 401) "Firma nu este activa in cloud" else "HTTP $code: ${detail(body)}")
+            val arr = JSONObject(body).optJSONArray("files") ?: return@withContext emptyList<CloudFile>() to ""
+            (0 until arr.length()).map { i ->
+                val j = arr.getJSONObject(i)
+                CloudFile(j.optLong("id"), j.optString("file_name"), j.optLong("file_size"), j.optString("file_type"),
+                    j.optString("amef_number"), j.optString("uploaded_at"))
+            } to ""
+        } catch (e: Exception) { null to (e.message ?: "fara conexiune") }
     }
 
     /** Urca fisierele (ZIP cu p7b + PDF-uri) pentru luna/anul dat. */

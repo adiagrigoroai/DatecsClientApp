@@ -41,7 +41,7 @@ fun EnrollScreen(isLoading: Boolean, errorMessage: String, onEnroll: (String, St
     Box(Modifier.fillMaxSize().background(AppColors.Background)) {
         Column(Modifier.fillMaxWidth().verticalScroll(rememberScrollState()).padding(32.dp).align(Alignment.Center),
             horizontalAlignment = Alignment.CenterHorizontally) {
-            androidx.compose.foundation.Image(androidx.compose.ui.res.painterResource(com.itsmart.datecs.client.R.drawable.itsmart_mark), null,
+            androidx.compose.foundation.Image(androidx.compose.ui.res.painterResource(com.itsmart.datecs.client.R.drawable.hero_cloud), null,
                 modifier = Modifier.size(72.dp).padding(bottom = 10.dp))
             Text("Inregistrare firma", color = AppColors.PrimaryDark, fontSize = 24.sp, fontWeight = FontWeight.W800)
             Text("Contul se creeaza in cloud.itsmart.ro cu datele firmei de la ANAF", color = AppColors.TextSecondary, fontSize = 13.sp,

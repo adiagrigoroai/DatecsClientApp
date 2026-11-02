@@ -43,10 +43,6 @@ fun ExportScreen(viewModel: MainViewModel, deviceState: DeviceState) {
     val cloudResult by viewModel.cloudResult.collectAsStateWithLifecycle()
     val cloudUploading by viewModel.cloudUploading.collectAsStateWithLifecycle()
     val cloudLink by viewModel.cloudLink.collectAsStateWithLifecycle()
-    val cloudPairing by viewModel.cloudPairing.collectAsStateWithLifecycle()
-    val cloudPairMessage by viewModel.cloudPairMessage.collectAsStateWithLifecycle()
-    var pairCode by remember { mutableStateOf("") }
-    var confirmUnpair by remember { mutableStateOf(false) }
 
     // Date range defaults: prima zi luna trecuta -> ultima zi luna trecuta
     val calFrom = remember {
@@ -92,40 +88,13 @@ fun ExportScreen(viewModel: MainViewModel, deviceState: DeviceState) {
     val (headerClientName, _, _) = remember(deviceState.headers, deviceState.cifNumber) { viewModel.parseHeaderInfo() }
     val lunaText = remember { AnafDownloader.LUNI_RO[Calendar.getInstance().apply { add(Calendar.MONTH, -1) }.get(Calendar.MONTH)] }
 
-    if (confirmUnpair) {
-        AlertDialog(onDismissRequest = { confirmUnpair = false },
-            title = { Text("Stergeti asocierea?") },
-            text = { Text("Fisierele XML nu se vor mai trimite in cloud.itsmart.ro pana nu introduceti un cod nou de asociere.") },
-            confirmButton = { TextButton(onClick = { confirmUnpair = false; viewModel.unpairCloud() }) { Text("Sterge asocierea", color = AppColors.Danger) } },
-            dismissButton = { TextButton(onClick = { confirmUnpair = false }) { Text("Renunta") } })
-    }
-
     Column(modifier = Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(12.dp)) {
 
-        // === CARD 0: ASOCIERE CLOUD.ITSMART.RO ===
-        SectionCard(title = "Asociere cloud.itsmart.ro", accent = if (cloudLink.paired) AppColors.Success else AppColors.Warning) {
-            if (cloudLink.paired) {
-                Text("Asociat cu ${cloudLink.companyName.ifBlank { "firma" }}" + if (cloudLink.cui.isNotBlank()) " (CUI ${cloudLink.cui})" else "",
-                    fontSize = 12.sp, fontWeight = FontWeight.W700, color = AppColors.Success,
-                    modifier = Modifier.fillMaxWidth().background(AppColors.SuccessBg, RoundedCornerShape(8.dp)).padding(10.dp))
-                Text("Fisierele XML descarcate se trimit automat in cloud.", fontSize = 10.sp, color = AppColors.TextSecondary,
-                    modifier = Modifier.padding(top = 6.dp, bottom = 6.dp))
-                ActionButton("Sterge asocierea", onClick = { confirmUnpair = true }, small = true, outline = true)
-            } else {
-                Text("Pentru trimiterea fisierelor XML, generati un cod de asociere in cloud.itsmart.ro " +
-                    "(Aparate > Aplicatii asociate > Genereaza cod de asociere) si introduceti-l aici. Codul este valabil 24 de ore.",
-                    fontSize = 10.sp, color = AppColors.TextSecondary, modifier = Modifier.padding(bottom = 8.dp))
-                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    OutlinedTextField(value = pairCode, onValueChange = { pairCode = it.uppercase().take(9) },
-                        label = { Text("Cod asociere (ex. ABCD-2345)", fontSize = 10.sp) }, modifier = Modifier.weight(1f), singleLine = true,
-                        textStyle = LocalTextStyle.current.copy(fontFamily = FontFamily.Monospace, fontSize = 16.sp))
-                    ActionButton(if (cloudPairing) "Asociere..." else "Asociaza", onClick = { viewModel.pairCloud(pairCode) },
-                        enabled = !cloudPairing && pairCode.count { it.isLetterOrDigit() } == 8, color = AppColors.Success)
-                }
-            }
-            if (cloudPairMessage.isNotEmpty() && !cloudLink.paired) {
-                Text(cloudPairMessage, fontSize = 11.sp, fontWeight = FontWeight.W600, color = AppColors.Danger, modifier = Modifier.padding(top = 6.dp))
-            }
+        // asocierea cu cloud.itsmart.ro se face din Setari; aici doar starea
+        if (!cloudLink.paired) {
+            Text("Aplicatia nu este asociata cu cloud.itsmart.ro: fisierele se descarca, dar nu se trimit in cloud (Setari → Cloud).",
+                fontSize = 12.sp, fontWeight = FontWeight.W600, color = AppColors.Warning,
+                modifier = Modifier.fillMaxWidth().padding(bottom = 10.dp).background(AppColors.WarningBg, RoundedCornerShape(10.dp)).padding(12.dp))
         }
 
         // === CARD 1: EXPORT XML DUPA NR. Z ===

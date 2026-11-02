@@ -145,6 +145,30 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     val account: StateFlow<com.itsmart.datecs.client.service.CloudUploadService.Account?> = _account.asStateFlow()
     private val _enrollLoading = MutableStateFlow(false)
     val enrollLoading: StateFlow<Boolean> = _enrollLoading.asStateFlow()
+    /** Transfer automat: fisierele XML descarcate de pe aparat se trimit singure in cloud (Acasa / Fisiere). */
+    private val _autoUpload = MutableStateFlow(getApplication<Application>().getSharedPreferences("datecs_client", 0).getBoolean("auto_upload", true))
+    val autoUpload: StateFlow<Boolean> = _autoUpload.asStateFlow()
+    fun setAutoUpload(on: Boolean) {
+        getApplication<Application>().getSharedPreferences("datecs_client", 0).edit().putBoolean("auto_upload", on).apply()
+        _autoUpload.value = on
+    }
+
+    // Fisierele firmei din cloud (ecranul Fisiere)
+    private val _cloudFiles = MutableStateFlow<List<com.itsmart.datecs.client.service.CloudUploadService.CloudFile>>(emptyList())
+    val cloudFiles: StateFlow<List<com.itsmart.datecs.client.service.CloudUploadService.CloudFile>> = _cloudFiles.asStateFlow()
+    private val _cloudFilesState = MutableStateFlow("")   // "" = gata, "loading", altfel mesajul de eroare
+    val cloudFilesState: StateFlow<String> = _cloudFilesState.asStateFlow()
+
+    fun loadCloudFiles() {
+        if (_cloudFilesState.value == "loading") return
+        viewModelScope.launch {
+            _cloudFilesState.value = "loading"
+            val (files, err) = cloud.listFiles()
+            if (files != null) _cloudFiles.value = files
+            _cloudFilesState.value = err
+        }
+    }
+
     private val _accountNotice = MutableStateFlow("")
     val accountNotice: StateFlow<String> = _accountNotice.asStateFlow()
     private val _enrollError = MutableStateFlow("")
@@ -1274,7 +1298,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                     serialNumber = _deviceState.value.serialNumber, basePath = writableBasePath(basePath)
                 ) { current, total, fileName -> _anafDownloadProgress.value = "Descarcare $current/$total: $fileName" }
                 _lastAnafResult.value = result
-                if (result.success) { showToast("${result.fileCount} fisiere descarcate!", "success"); uploadToCloud() }
+                if (result.success) { showToast("${result.fileCount} fisiere descarcate!", "success"); if (_autoUpload.value) uploadToCloud() }
                 else showToast("Eroare: ${result.error}", "error")
             } catch (e: Exception) {
                 _lastAnafResult.value = AnafDownloadResult(false, 0, "", emptyList(), "Eroare: ${e.message}")

@@ -50,7 +50,7 @@ fun LoginScreen(
         ) {
             // Logo/Title
             androidx.compose.foundation.Image(
-                androidx.compose.ui.res.painterResource(com.itsmart.datecs.client.R.drawable.itsmart_mark), null,
+                androidx.compose.ui.res.painterResource(com.itsmart.datecs.client.R.drawable.hero_cloud), null,
                 modifier = Modifier.size(84.dp).padding(bottom = 12.dp)
             )
             Text(

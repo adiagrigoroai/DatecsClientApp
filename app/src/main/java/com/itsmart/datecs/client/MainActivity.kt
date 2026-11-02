@@ -35,6 +35,7 @@ import kotlinx.coroutines.launch
 import androidx.compose.foundation.Image
 import androidx.compose.ui.res.painterResource
 import com.itsmart.datecs.client.ui.navigation.Screen
+import com.itsmart.datecs.client.ui.components.AppHeader
 import com.itsmart.datecs.client.ui.screens.*
 import com.itsmart.datecs.client.ui.theme.AppColors
 import com.itsmart.datecs.client.ui.theme.DatecsServiceTheme
@@ -237,11 +238,15 @@ fun MainContent(viewModel: MainViewModel = viewModel()) {
     val pendingRevizie by viewModel.pendingRevizie.collectAsStateWithLifecycle()
     val unreadCount by viewModel.unreadMessageCount.collectAsStateWithLifecycle()
 
-    var currentScreen by remember { mutableStateOf(Screen.Connect) }
-
-    // Auto-navigate to Status when connected
+    var currentScreen by remember { mutableStateOf(Screen.Home) }
+    // tableta / POS all-in-one (10", 12", 15" wide): meniu lateral si continut pe doua coloane
+    val wide = androidx.compose.ui.platform.LocalConfiguration.current.screenWidthDp >= 600
+    // ecranele care cer aparat conectat revin la Aparate daca legatura se pierde
     LaunchedEffect(connected) {
-        if (connected && currentScreen == Screen.Connect) currentScreen = Screen.Status
+        if (!connected && currentScreen in setOf(Screen.Export, Screen.Maintenance)) currentScreen = Screen.Devices
+    }
+    androidx.activity.compose.BackHandler(enabled = currentScreen != Screen.Home) {
+        currentScreen = if (currentScreen.tab) Screen.Home else currentScreen.tabScreen
     }
 
     // ── Update check pe GitHub Releases (o singura data per pornire app) ──
@@ -252,7 +257,20 @@ fun MainContent(viewModel: MainViewModel = viewModel()) {
     LaunchedEffect(Unit) {
         try {
             val res = com.itsmart.datecs.client.service.AppUpdateService.checkForUpdate()
-            if (res.hasUpdate && res.latest != null) updateInfo = res.latest
+            val info = res.latest
+            if (res.hasUpdate && info != null) {
+                updateInfo = info
+                if (!com.itsmart.datecs.client.service.AppUpdateService.needsInstallPermission(context)) {
+                    updateDownloading = true
+                    updateProgress = "Se descarca automat..."
+                    val apk = com.itsmart.datecs.client.service.AppUpdateService.downloadApk(context, info) { dl, total ->
+                        updateProgress = "Descarcat ${if (total > 0) dl * 100 / total else 0}%"
+                    }
+                    updateDownloading = false
+                    if (apk != null) { com.itsmart.datecs.client.service.AppUpdateService.installApk(context, apk); updateInfo = null }
+                    else updateProgress = "Descarcarea automata a esuat. Apasati Actualizeaza."
+                }
+            }
         } catch (_: Throwable) {}
     }
     updateInfo?.let { info ->
@@ -318,108 +336,77 @@ fun MainContent(viewModel: MainViewModel = viewModel()) {
         )
     }
 
-    Scaffold(
-        topBar = {
-            Column(Modifier.fillMaxWidth().background(Color.White).statusBarsPadding()) {
-                Row(
-                    modifier = Modifier.padding(horizontal = 14.dp, vertical = 10.dp),
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Image(painterResource(R.drawable.itsmart_mark), null, modifier = Modifier.size(34.dp))
-                    Spacer(modifier = Modifier.width(10.dp))
-                    Column(modifier = Modifier.weight(1f)) {
-                        Text("IT Smart Client", color = AppColors.PrimaryDark, fontWeight = FontWeight.W800, fontSize = 17.sp)
-                        if (connected) {
-                            Text(
-                                "${deviceState.devName} \u2022 ${deviceState.serialNumber}",
-                                color = AppColors.TextSecondary, fontSize = 11.sp
-                            )
-                        } else {
-                            Text("Niciun aparat conectat", color = AppColors.TextTertiary, fontSize = 11.sp)
-                        }
-                    }
-                    // Pending revizie indicator
-                    if (pendingRevizie != null) {
-                        Box(
-                            modifier = Modifier
-                                .padding(end = 8.dp)
-                                .background(AppColors.Warning, RoundedCornerShape(12.dp))
-                                .padding(horizontal = 8.dp, vertical = 4.dp)
-                        ) {
-                            Text("REVIZIE", fontSize = 9.sp, fontWeight = FontWeight.W800, color = Color.White)
-                        }
-                    }
-                    // Connection dot
-                    Box(modifier = Modifier.size(12.dp).clip(CircleShape).background(if (connected) AppColors.Success else AppColors.Danger))
-                    // Logout
-                    IconButton(onClick = { viewModel.logout() }) {
-                        Icon(Icons.Filled.Logout, "Logout", tint = AppColors.TextSecondary, modifier = Modifier.size(20.dp))
+    val open: (Screen) -> Unit = { currentScreen = it }
+    val header: @Composable () -> Unit = {
+        if (currentScreen == Screen.Home) {
+            AppHeader("IT Smart Client", "Conectare · Export XML · Mentenanta AMEF",
+                leading = { Icon(Icons.Filled.CloudUpload, null, tint = Color.White, modifier = Modifier.size(38.dp)) }) {
+                if (pendingRevizie != null) {
+                    Text("REVIZIE", fontSize = 10.sp, fontWeight = FontWeight.W800, color = Color.White,
+                        modifier = Modifier.background(AppColors.Warning, RoundedCornerShape(12.dp)).padding(horizontal = 8.dp, vertical = 4.dp))
+                }
+                IconButton(onClick = { currentScreen = Screen.Messages }) {
+                    BadgedBox(badge = { if (unreadCount > 0) Badge { Text("$unreadCount") } }) {
+                        Icon(Icons.Filled.Notifications, "Mesaje", tint = Color.White)
                     }
                 }
-                Box(Modifier.fillMaxWidth().height(3.dp).background(Brush.horizontalGradient(AppColors.BrandGradient)))
             }
-        },
+        } else {
+            val title = when (currentScreen) {
+                Screen.Devices -> if (connected) "Aparat conectat" else "Conecteaza aparatul"
+                Screen.Files -> "Fisiere XML"
+                else -> currentScreen.label
+            }
+            val sub = if (connected) "${deviceState.devName} · ${deviceState.serialNumber}" else null
+            AppHeader(title, sub, onBack = if (wide && currentScreen.tab) null else ({ currentScreen = if (currentScreen.tab) Screen.Home else currentScreen.tabScreen }))
+        }
+    }
+    val tabs = Screen.entries.filter { it.tab }
+    val navColors = NavigationBarItemDefaults.colors(selectedIconColor = Color.White, selectedTextColor = AppColors.Primary,
+        unselectedIconColor = AppColors.TextSecondary, unselectedTextColor = AppColors.TextSecondary, indicatorColor = AppColors.Primary)
+
+    Scaffold(
+        topBar = header,
         bottomBar = {
-            NavigationBar(containerColor = Color.White, tonalElevation = 0.dp) {
-                Screen.entries.forEach { screen ->
+            if (!wide) NavigationBar(containerColor = Color.White, tonalElevation = 0.dp) {
+                tabs.forEach { screen ->
                     NavigationBarItem(
-                        icon = {
-                            if (screen == Screen.Messages && unreadCount > 0) {
-                                BadgedBox(badge = {
-                                    Badge { Text("$unreadCount") }
-                                }) {
-                                    Icon(screen.icon, null, modifier = Modifier.size(22.dp))
-                                }
-                            } else {
-                                Icon(screen.icon, null, modifier = Modifier.size(22.dp))
-                            }
-                        },
-                        label = { Text(screen.label, fontSize = 11.sp, fontWeight = FontWeight.W600) },
-                        selected = currentScreen == screen,
-                        onClick = { currentScreen = screen },
-                        colors = NavigationBarItemDefaults.colors(
-                            selectedIconColor = AppColors.Primary,
-                            selectedTextColor = AppColors.Primary,
-                            unselectedIconColor = AppColors.TextTertiary,
-                            unselectedTextColor = AppColors.TextTertiary,
-                            indicatorColor = AppColors.Primary.copy(alpha = 0.1f)
-                        )
-                    )
+                        icon = { Icon(screen.icon, null, modifier = Modifier.size(24.dp)) },
+                        label = { Text(screen.label, fontSize = 12.sp, fontWeight = FontWeight.W700) },
+                        selected = currentScreen.tabScreen == screen, onClick = { currentScreen = screen }, colors = navColors)
                 }
             }
         }
     ) { paddingValues ->
-        Box(
-            modifier = Modifier.fillMaxSize().padding(paddingValues).background(AppColors.Background)
-        ) {
-            // Not connected guard (except Connect screen)
-            if (!connected && currentScreen != Screen.Connect) {
-                Column(
-                    modifier = Modifier.fillMaxSize(),
-                    horizontalAlignment = Alignment.CenterHorizontally,
-                    verticalArrangement = Arrangement.Center
-                ) {
-                    Icon(Icons.Filled.LinkOff, null, modifier = Modifier.size(48.dp), tint = AppColors.TextTertiary)
-                    Spacer(modifier = Modifier.height(12.dp))
-                    Text("Conectati un aparat fiscal", fontWeight = FontWeight.W700, fontSize = 16.sp, color = AppColors.TextPrimary)
-                    Spacer(modifier = Modifier.height(6.dp))
-                    Text("USB, Bluetooth sau LAN", fontSize = 12.sp, color = AppColors.TextSecondary)
-                    Spacer(modifier = Modifier.height(20.dp))
-                    Button(onClick = { currentScreen = Screen.Connect }, shape = RoundedCornerShape(10.dp)) {
-                        Text("Conectare", fontWeight = FontWeight.W700)
-                    }
+        Row(Modifier.fillMaxSize().padding(paddingValues).background(AppColors.Background)) {
+            if (wide) NavigationRail(containerColor = Color.White, modifier = Modifier.fillMaxHeight().padding(top = 8.dp)) {
+                tabs.forEach { screen ->
+                    NavigationRailItem(
+                        icon = { Icon(screen.icon, null, modifier = Modifier.size(26.dp)) },
+                        label = { Text(screen.label, fontSize = 12.sp, fontWeight = FontWeight.W700) },
+                        selected = currentScreen.tabScreen == screen, onClick = { currentScreen = screen },
+                        colors = NavigationRailItemDefaults.colors(selectedIconColor = Color.White, selectedTextColor = AppColors.Primary,
+                            unselectedIconColor = AppColors.TextSecondary, unselectedTextColor = AppColors.TextSecondary,
+                            indicatorColor = AppColors.Primary),
+                        modifier = Modifier.padding(vertical = 6.dp))
                 }
-            } else {
+            }
+        Box(modifier = Modifier.weight(1f).fillMaxHeight(), contentAlignment = Alignment.TopCenter) {
+            // pe ecranele foarte late (15") continutul nu se intinde peste ~1100 dp
+            Box(Modifier.fillMaxSize().widthIn(max = 1100.dp)) {
                 when (currentScreen) {
-                    Screen.Connect -> ConnectScreen(viewModel, connected) { currentScreen = Screen.Status }
-                    Screen.Status -> StatusScreen(viewModel, deviceState, isLoading)
+                    Screen.Home -> HomeScreen(viewModel, connected, wide, open)
+                    Screen.Devices -> DevicesScreen(viewModel, connected, wide, open)
+                    Screen.Files -> FilesScreen(viewModel, wide, open)
+                    Screen.Settings -> SettingsScreen(viewModel, wide, open)
                     Screen.Export -> ExportScreen(viewModel, deviceState)
+                    Screen.Maintenance -> StatusScreen(viewModel, deviceState, isLoading)
                     Screen.Messages -> MessagesScreen(viewModel, deviceState)
                 }
             }
 
             // Toast
-            AnimatedVisibility(
+            androidx.compose.animation.AnimatedVisibility(
                 visible = toastMessage != null,
                 modifier = Modifier.align(Alignment.BottomCenter).padding(16.dp)
             ) {
@@ -457,6 +444,7 @@ fun MainContent(viewModel: MainViewModel = viewModel()) {
                     }
                 }
             }
+        }
         }
     }
 }
