@@ -218,6 +218,30 @@ class DudeDeviceConnection(private val context: Context) : IDeviceConnection {
         }
     }
 
+    /** Fara pornirea automata la conectare (filtrul USB), permisiunea se cere aici; asteapta raspunsul utilizatorului. */
+    private fun requestUsbPermission(usbManager: UsbManager, device: android.hardware.usb.UsbDevice): Boolean {
+        val action = context.packageName + ".USB_PERMISSION"
+        val latch = java.util.concurrent.CountDownLatch(1)
+        var granted = false
+        val receiver = object : android.content.BroadcastReceiver() {
+            override fun onReceive(c: Context, i: android.content.Intent) {
+                granted = i.getBooleanExtra(UsbManager.EXTRA_PERMISSION_GRANTED, false)
+                latch.countDown()
+            }
+        }
+        androidx.core.content.ContextCompat.registerReceiver(context, receiver, android.content.IntentFilter(action),
+            androidx.core.content.ContextCompat.RECEIVER_NOT_EXPORTED)
+        try {
+            val pi = android.app.PendingIntent.getBroadcast(context, 0,
+                android.content.Intent(action).setPackage(context.packageName), android.app.PendingIntent.FLAG_MUTABLE)
+            usbManager.requestPermission(device, pi)
+            latch.await(60, java.util.concurrent.TimeUnit.SECONDS)
+        } finally {
+            try { context.unregisterReceiver(receiver) } catch (_: Exception) {}
+        }
+        return granted || usbManager.hasPermission(device)
+    }
+
     private fun openUsbConnection(deviceName: String) {
         Log.d(TAG, "openUsbConnection: deviceName=$deviceName")
         val usbManager = context.getSystemService(Context.USB_SERVICE) as UsbManager
@@ -227,6 +251,10 @@ class DudeDeviceConnection(private val context: Context) : IDeviceConnection {
         } ?: throw IOException("USB device not found: $deviceName")
 
         Log.d(TAG, "Found USB device: VID=${device.vendorId} PID=${device.productId} interfaces=${device.interfaceCount}")
+        if (DeviceScanner.isPinpad(device.vendorId, device.productId))
+            throw IOException("Aparatul USB este terminalul de plata BluePad, nu casa de marcat")
+        if (!usbManager.hasPermission(device) && !requestUsbPermission(usbManager, device))
+            throw IOException("Permisiunea USB pentru casa de marcat a fost refuzata")
         val conn = usbManager.openDevice(device)
             ?: throw IOException("Cannot open USB device (permission denied?)")
         Log.d(TAG, "USB device opened successfully")
