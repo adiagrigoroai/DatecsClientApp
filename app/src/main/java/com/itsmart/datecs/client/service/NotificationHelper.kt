@@ -66,13 +66,17 @@ object NotificationHelper {
         nm.createNotificationChannel(agent)
     }
 
-    private fun openAppIntent(context: Context): PendingIntent {
+    /** Extra pe intentul notificarii: aplicatia se deschide direct pe ecranul Mesaje (revizie / comenzi CRM). */
+    const val EXTRA_OPEN_MESSAGES = "open_messages"
+
+    private fun openAppIntent(context: Context, messages: Boolean = false): PendingIntent {
         val intent = Intent(context, MainActivity::class.java).apply {
             flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_SINGLE_TOP
+            if (messages) putExtra(EXTRA_OPEN_MESSAGES, true)
         }
         val flags = PendingIntent.FLAG_UPDATE_CURRENT or
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) PendingIntent.FLAG_IMMUTABLE else 0
-        return PendingIntent.getActivity(context, 0, intent, flags)
+        return PendingIntent.getActivity(context, if (messages) 1 else 0, intent, flags)
     }
 
     /** Notificare heads-up: noua comanda CRM (revizie, export, etc.). */
@@ -87,7 +91,7 @@ object NotificationHelper {
             .setCategory(NotificationCompat.CATEGORY_REMINDER)
             .setDefaults(NotificationCompat.DEFAULT_ALL)
             .setAutoCancel(true)
-            .setContentIntent(openAppIntent(context))
+            .setContentIntent(openAppIntent(context, messages = true))
             .build()
         try {
             androidx.core.app.NotificationManagerCompat.from(context).notify(NOTIF_ID_COMMAND, n)

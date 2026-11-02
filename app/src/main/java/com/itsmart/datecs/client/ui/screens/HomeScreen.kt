@@ -57,8 +57,8 @@ fun HomeScreen(viewModel: MainViewModel, connected: Boolean, wide: Boolean, onOp
         }
 
         if (pendingRevizie != null) {
-            NoticeCard(Icons.Filled.Build, "Revizie programata", "Din CRM a venit o cerere de revizie. Deschideti Mentenanta AMEF.",
-                AppColors.Warning, AppColors.WarningBg, onClick = { onOpen(if (connected) Screen.Maintenance else Screen.Devices) })
+            NoticeCard(Icons.Filled.Build, "Revizie programata", "Din CRM a venit o cerere de revizie. Atingeti pentru detalii.",
+                AppColors.Warning, AppColors.WarningBg, onClick = { onOpen(Screen.Messages) })
         }
 
         // cele 4 placi: un rand pe ecran lat (tableta / POS), 2 x 2 pe telefon

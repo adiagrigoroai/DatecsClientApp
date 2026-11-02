@@ -18,7 +18,7 @@ android {
         applicationId = "com.itsmart.datecs.client"
         minSdk = 28
         targetSdk = 34
-        versionCode = 14
+        versionCode = 15
         versionName = "1.0.10"
     }
 

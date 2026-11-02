@@ -71,6 +71,19 @@ class MainActivity : ComponentActivity() {
         return Regex("(?i)(BC[-_]?500|BlueCash[-_]?500)").containsMatchIn(m)
     }
 
+    override fun onNewIntent(intent: android.content.Intent) {
+        super.onNewIntent(intent)
+        handleOpenIntent(intent)
+    }
+
+    /** Notificarea de comanda CRM (revizie) deschide ecranul Mesaje. */
+    private fun handleOpenIntent(intent: android.content.Intent?) {
+        if (intent?.getBooleanExtra(com.itsmart.datecs.client.service.NotificationHelper.EXTRA_OPEN_MESSAGES, false) == true) {
+            viewModelInstance.openMessagesRequest.value = true
+            intent.removeExtra(com.itsmart.datecs.client.service.NotificationHelper.EXTRA_OPEN_MESSAGES)
+        }
+    }
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
 
@@ -119,6 +132,7 @@ class MainActivity : ComponentActivity() {
             registerReceiver(newCommandReceiver, filter)
         }
 
+        handleOpenIntent(intent)
         setContent { DatecsServiceTheme { MainContent() } }
     }
 
@@ -245,6 +259,10 @@ fun MainContent(viewModel: MainViewModel = viewModel()) {
     // ecranele care cer aparat conectat revin la Aparate daca legatura se pierde
     LaunchedEffect(connected) {
         if (!connected && currentScreen in setOf(Screen.Export, Screen.Maintenance)) currentScreen = Screen.Devices
+    }
+    val openMessages by viewModel.openMessagesRequest.collectAsStateWithLifecycle()
+    LaunchedEffect(openMessages) {
+        if (openMessages) { currentScreen = Screen.Messages; viewModel.openMessagesRequest.value = false }
     }
     androidx.activity.compose.BackHandler(enabled = currentScreen != Screen.Home) {
         currentScreen = if (currentScreen.tab) Screen.Home else currentScreen.tabScreen

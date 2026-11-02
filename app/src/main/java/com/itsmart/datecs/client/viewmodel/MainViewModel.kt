@@ -177,6 +177,9 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
+    /** Deschiderea din notificarea CRM (revizie): MainContent navigheaza la Mesaje si reseteaza. */
+    val openMessagesRequest = MutableStateFlow(false)
+
     // Fisierele firmei din cloud (ecranul Fisiere)
     private val _cloudFiles = MutableStateFlow<List<com.itsmart.datecs.client.service.CloudUploadService.CloudFile>>(emptyList())
     val cloudFiles: StateFlow<List<com.itsmart.datecs.client.service.CloudUploadService.CloudFile>> = _cloudFiles.asStateFlow()

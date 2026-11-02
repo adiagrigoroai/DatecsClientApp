@@ -212,6 +212,7 @@ private fun ConnectedPanel(viewModel: MainViewModel, onOpen: (Screen) -> Unit) {
             ConnectionType.INTERNAL -> "Modul fiscal intern"
         })
     }
+    AmefStatusCard(ds)
     when {
         !link.paired -> NoticeCard(Icons.Filled.CloudOff, "Neasociat cu cloud.itsmart.ro", "Fisierele XML nu se trimit in cloud. Asociati din Setari.",
             AppColors.Warning, AppColors.WarningBg, onClick = { onOpen(Screen.Settings) })
@@ -234,6 +235,50 @@ private fun ConnectedPanel(viewModel: MainViewModel, onOpen: (Screen) -> Unit) {
     TextButton(onClick = { viewModel.disconnectDevice() }, modifier = Modifier.fillMaxWidth()) {
         Icon(Icons.Filled.LinkOff, null, tint = AppColors.Danger, modifier = Modifier.size(18.dp)); Spacer(Modifier.width(6.dp))
         Text("Deconecteaza aparatul", color = AppColors.Danger, fontWeight = FontWeight.W700)
+    }
+}
+
+/** Data de service (revizie) a aparatului, ex. "30-11-27 10:00:00" -> zile ramase; null daca nu se poate citi. */
+private fun daysToService(serviceDate: String): Long? = try {
+    val d = java.text.SimpleDateFormat("dd-MM-yy", java.util.Locale.US).apply { isLenient = false }.parse(serviceDate.trim().take(8))
+    d?.let { java.util.concurrent.TimeUnit.MILLISECONDS.toDays(it.time - System.currentTimeMillis()) }
+} catch (_: Exception) { null }
+
+/** Starea AMEF la conectare: legatura cu ANAF (ultima transmisie) si cand expira revizia. */
+@Composable
+private fun AmefStatusCard(ds: com.itsmart.datecs.client.data.model.DeviceState) {
+    val anafOk = ds.lastConnectionState == "1"
+    val days = daysToService(ds.serviceDate)
+    SoftCard(padding = 14.dp) {
+        Text("Stare AMEF", fontSize = 15.sp, fontWeight = FontWeight.W800, color = AppColors.TextPrimary, modifier = Modifier.padding(bottom = 8.dp))
+        StatusPill(if (anafOk) Icons.Filled.CheckCircle else Icons.Filled.ErrorOutline,
+            if (anafOk) "Conectat la ANAF" else if (ds.lastConnectionState.isBlank()) "Stare ANAF necitita" else "Eroare transmitere ANAF",
+            buildString {
+                if (ds.lastConnectionDate.isNotBlank()) append("Ultima transmisie: ${ds.lastConnectionDate}")
+                if (!anafOk && ds.lastConnectionErrorCode.isNotBlank()) append(" · cod eroare ${ds.lastConnectionErrorCode}")
+            },
+            if (anafOk) AppColors.Success else AppColors.Danger, if (anafOk) AppColors.SuccessBg else AppColors.DangerBg)
+        Spacer(Modifier.height(8.dp))
+        val (tone, bg, title) = when {
+            ds.serviceDate.isBlank() -> Triple(AppColors.TextSecondary, Color(0xFFF1F3F7), "Data reviziei necitita")
+            days == null -> Triple(AppColors.TextSecondary, Color(0xFFF1F3F7), "Revizie: ${ds.serviceDate}")
+            days < 0 -> Triple(AppColors.Danger, AppColors.DangerBg, "Revizie expirata")
+            days <= 30 -> Triple(AppColors.Warning, AppColors.WarningBg, "Revizia expira in $days zile")
+            else -> Triple(AppColors.Success, AppColors.SuccessBg, "Revizie valabila")
+        }
+        StatusPill(Icons.Filled.EventAvailable, title, if (ds.serviceDate.isNotBlank()) "Expira la: ${ds.serviceDate}" else "", tone, bg)
+    }
+}
+
+@Composable
+private fun StatusPill(icon: ImageVector, title: String, text: String, tone: Color, bg: Color) {
+    Row(Modifier.fillMaxWidth().clip(RoundedCornerShape(12.dp)).background(bg).padding(12.dp), verticalAlignment = Alignment.CenterVertically) {
+        Icon(icon, null, tint = tone, modifier = Modifier.size(24.dp))
+        Spacer(Modifier.width(10.dp))
+        Column {
+            Text(title, fontSize = 14.sp, fontWeight = FontWeight.W800, color = tone)
+            if (text.isNotBlank()) Text(text, fontSize = 12.sp, color = AppColors.TextSecondary)
+        }
     }
 }
 
