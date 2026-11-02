@@ -125,7 +125,9 @@ class UsbOutputStream(
 
     companion object {
         private const val TAG = "UsbOutputStream"
-        private const val TIMEOUT = 100
+        /** Casa ocupata (raport, lista fisiere ANAF) poate refuza datele un timp: 100 ms era prea putin (Write error -1 pe DP-05L). */
+        private const val TIMEOUT = 1000
+        private const val MAX_WAIT_MS = 3000L
     }
 
     private val packetBuffer = ByteArray(2048)
@@ -157,13 +159,16 @@ class UsbOutputStream(
 
     @Synchronized
     override fun flush() {
+        val deadline = System.currentTimeMillis() + MAX_WAIT_MS
         while (packetLength > 0) {
             lastError?.let { throw IOException(it) }
             val len = connection.bulkTransfer(endpoint, packetBuffer, packetLength, TIMEOUT)
             if (len < 0) {
-                Log.e(TAG, "Write bulkTransfer failed: $len")
-                lastError = "Write error $len"
-                throw IOException(lastError)
+                // reincercare pana la MAX_WAIT_MS; fluxul nu se blocheaza definitiv la o singura pauza a casei
+                if (System.currentTimeMillis() < deadline) { Thread.sleep(50); continue }
+                Log.e(TAG, "Write bulkTransfer failed: $len (dupa ${MAX_WAIT_MS} ms)")
+                packetLength = 0
+                throw IOException("Write error $len: casa nu preia datele (ocupata sau cablu USB deconectat)")
             } else {
                 packetLength -= len
                 if (packetLength > 0) {
