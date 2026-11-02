@@ -144,7 +144,7 @@ fun AccountStatusScreen(account: CloudUploadService.Account, notice: String, onR
                         Spacer(Modifier.height(8.dp))
                     }
                     Button(onClick = onRefresh, modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(10.dp),
-                        colors = ButtonDefaults.buttonColors(containerColor = AppColors.Primary)) { Text("Verifica din nou") }
+                        colors = ButtonDefaults.buttonColors(containerColor = AppColors.Primary, contentColor = Color.White)) { Text("Verifica din nou", fontWeight = FontWeight.W700) }
                     if (account.error.isNotBlank()) Text(account.error, fontSize = 12.sp, color = AppColors.Danger,
                         textAlign = TextAlign.Center, modifier = Modifier.padding(top = 10.dp))
                     if (notice.isNotBlank()) Text(notice, fontSize = 12.sp, color = AppColors.TextSecondary,
