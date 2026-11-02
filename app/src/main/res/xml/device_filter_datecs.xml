@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Casele Datecs pe USB direct (VID 0xFFF0). Acelasi VID/PID il are si terminalul BluePad: de aceea filtrul e pe un
+     activity-alias care se dezactiveaza pe BlueCash (AmefMonitorApp), unde BluePad-ul sta conectat permanent. -->
+<resources>
+    <usb-device vendor-id="65520" />
+</resources>

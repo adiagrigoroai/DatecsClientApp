@@ -17,6 +17,16 @@ class AmefMonitorApp : Application() {
     override fun onCreate() {
         super.onCreate()
 
+        // Pe BlueCash casa e modulul intern, iar pe USB sta terminalul BluePad (acelasi VID/PID ca o casa Datecs):
+        // aplicatia nu trebuie sa apara / sa porneasca la conectarea lui.
+        try {
+            packageManager.setComponentEnabledSetting(
+                android.content.ComponentName(this, "$packageName.UsbDatecsAlias"),
+                if (com.itsmart.datecs.client.service.AppUpdateService.isBlueCash) android.content.pm.PackageManager.COMPONENT_ENABLED_STATE_DISABLED
+                else android.content.pm.PackageManager.COMPONENT_ENABLED_STATE_DEFAULT,
+                android.content.pm.PackageManager.DONT_KILL_APP)
+        } catch (_: Exception) {}
+
         val defaultHandler = Thread.getDefaultUncaughtExceptionHandler()
 
         Thread.setDefaultUncaughtExceptionHandler { thread, throwable ->
