@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- Doar adaptoarele FTDI ale caselor Datecs. VID-ul Datecs (65520) nu e aici: il are si terminalul de plata
-     BluePad (Datecs Pay), pe care aplicatia nu trebuie sa-l deschida; casele Datecs pe USB cer permisiunea la conectare. -->
+<!-- Doar adaptoarele FTDI ale caselor Datecs. VID/PID-ul Datecs (65520/256) nu e aici: il au si terminalul de plata
+     BluePad (Datecs Pay) si casele Datecs pe USB; casa se conecteaza din aplicatie (Rescaneaza), cu cerere de permisiune. -->
 <resources>
     <usb-device vendor-id="1027" />
 </resources>

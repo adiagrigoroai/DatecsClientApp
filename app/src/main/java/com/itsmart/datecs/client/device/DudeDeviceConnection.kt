@@ -251,8 +251,6 @@ class DudeDeviceConnection(private val context: Context) : IDeviceConnection {
         } ?: throw IOException("USB device not found: $deviceName")
 
         Log.d(TAG, "Found USB device: VID=${device.vendorId} PID=${device.productId} interfaces=${device.interfaceCount}")
-        if (DeviceScanner.isPinpad(device.vendorId, device.productId))
-            throw IOException("Aparatul USB este terminalul de plata BluePad, nu casa de marcat")
         if (!usbManager.hasPermission(device) && !requestUsbPermission(usbManager, device))
             throw IOException("Permisiunea USB pentru casa de marcat a fost refuzata")
         val conn = usbManager.openDevice(device)

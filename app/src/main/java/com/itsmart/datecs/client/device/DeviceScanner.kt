@@ -24,10 +24,8 @@ class DeviceScanner(private val context: Context) {
         private const val TAG = "DeviceScanner"
         const val DATECS_USB_VID = 65520  // 0xFFF0
         const val FTDI_USB_VID = 1027     // 0x0403
-        /** Terminalul de plata BluePad (Datecs Pay): acelasi VID Datecs, dar nu e casa de marcat. */
-        const val BLUEPAD_USB_PID = 256   // 0x0100
-
-        fun isPinpad(vendorId: Int, productId: Int) = vendorId == DATECS_USB_VID && productId == BLUEPAD_USB_PID
+        // Casele Datecs pe USB si terminalul BluePad au acelasi VID/PID (0xFFF0/0x0100): nu se pot deosebi dupa ID,
+        // de aceea filtrul de pornire automata are doar FTDI, iar casa se conecteaza din aplicatie (Rescaneaza).
     }
 
     fun scanUsbDevices(): List<ScannedDevice> {
@@ -42,7 +40,7 @@ class DeviceScanner(private val context: Context) {
                 } catch (_: Exception) {}
             }
             val filtered = allDevices.values
-                .filter { (it.vendorId == DATECS_USB_VID || it.vendorId == FTDI_USB_VID) && !isPinpad(it.vendorId, it.productId) }
+                .filter { it.vendorId == DATECS_USB_VID || it.vendorId == FTDI_USB_VID }
             Log.d(TAG, "scanUsbDevices: ${filtered.size} Datecs/FTDI devices after filter")
             filtered.map { device ->
                 val friendlyName = when {
