@@ -131,8 +131,24 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     val cloudUploading: StateFlow<Boolean> = _cloudUploading.asStateFlow()
     private val _cloudResult = MutableStateFlow("")
     val cloudResult: StateFlow<String> = _cloudResult.asStateFlow()
-    private val _cloudTokenInfo = MutableStateFlow("")
-    val cloudTokenInfo: StateFlow<String> = _cloudTokenInfo.asStateFlow()
+    // Asocierea cu cloud.itsmart.ro (token propriu al acestei instalari)
+    private val cloud = com.itsmart.datecs.client.service.CloudUploadService(application)
+    private val _cloudLink = MutableStateFlow(cloud.link())
+    val cloudLink: StateFlow<com.itsmart.datecs.client.service.CloudUploadService.Link> = _cloudLink.asStateFlow()
+    private val _cloudPairing = MutableStateFlow(false)
+    val cloudPairing: StateFlow<Boolean> = _cloudPairing.asStateFlow()
+    private val _cloudPairMessage = MutableStateFlow("")
+    val cloudPairMessage: StateFlow<String> = _cloudPairMessage.asStateFlow()
+
+    // Inrolare din aplicatie (cod fiscal + email + telefon): aplicatia se foloseste doar cu contul activ (platit)
+    private val _account = MutableStateFlow(if (cloud.enrolled) cloud.cachedAccount() else null)
+    val account: StateFlow<com.itsmart.datecs.client.service.CloudUploadService.Account?> = _account.asStateFlow()
+    private val _enrollLoading = MutableStateFlow(false)
+    val enrollLoading: StateFlow<Boolean> = _enrollLoading.asStateFlow()
+    private val _accountNotice = MutableStateFlow("")
+    val accountNotice: StateFlow<String> = _accountNotice.asStateFlow()
+    private val _enrollError = MutableStateFlow("")
+    val enrollError: StateFlow<String> = _enrollError.asStateFlow()
 
     // Report preview
     private val _reportPreviewText = MutableStateFlow("")
@@ -158,6 +174,10 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         // Cand service-ul detecteaza o comanda noua, va apela direct VM.onIncomingCrmCommand
         // (bypass broadcast — broadcast-ul era pierdut intermittent).
         activeInstance = this
+        // asocierea poate fi revocata din portal: se verifica la pornire (fara internet ramane cum era)
+        // (instalarile inrolate din aplicatie au firma inactiva pana la plata: starea lor vine din refreshAccount)
+        if (cloud.enrolled) { _isLoggedIn.value = true; _username.value = cloud.cachedAccount().email; refreshAccount() }
+        else if (_cloudLink.value.paired) viewModelScope.launch { cloud.whoami(); _cloudLink.value = cloud.link() }
     }
 
     override fun onCleared() {
@@ -265,9 +285,54 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         javax.crypto.SecretKeyFactory.getInstance("PBKDF2WithHmacSHA256")
             .generateSecret(javax.crypto.spec.PBEKeySpec(password.toCharArray(), salt, 20_000, 256)).encoded
 
+    // ==================== INROLARE ====================
+
+    fun enroll(cui: String, email: String, phone: String) {
+        if (_enrollLoading.value) return
+        viewModelScope.launch {
+            _enrollLoading.value = true; _enrollError.value = ""
+            val r = cloud.enroll(cui, email, phone)
+            _enrollLoading.value = false
+            if (!r.ok) { _enrollError.value = r.message; addLog("CLOUD", "Inrolare esuata", r.message, false); return@launch }
+            addLog("CLOUD", "Inrolare", r.message, true)
+            _cloudLink.value = cloud.link()
+            _account.value = cloud.cachedAccount()
+            _username.value = email.trim().lowercase()
+            _isLoggedIn.value = true
+        }
+    }
+
+    /** Starea contului (confirmare email / plata / activ); se apeleaza la pornire si din ecranul de stare. */
+    fun refreshAccount() {
+        if (!cloud.enrolled) return
+        viewModelScope.launch {
+            val a = cloud.account()
+            _accountNotice.value = ""
+            _cloudLink.value = cloud.link()
+            if (a.status == "none") { _account.value = null; _isLoggedIn.value = false; _loginError.value = a.error; return@launch }
+            _account.value = a
+        }
+    }
+
+    fun resendConfirmation() {
+        viewModelScope.launch {
+            _accountNotice.value = cloud.resendConfirmation().message
+        }
+    }
+
+    /** Renunta la inrolarea de pe acest aparat (alta firma / alt email). */
+    fun leaveEnrollment() {
+        cloud.forget()
+        _cloudLink.value = cloud.link()
+        _account.value = null
+        logout()
+    }
+
     fun logout() {
         val prefs = getApplication<Application>().getSharedPreferences("datecs_client", 0)
         prefs.edit().remove("auth_token").remove("auth_user").apply()
+        // aparatul inrolat din aplicatie nu are parola: iesirea inseamna renuntarea la inrolare (se poate relua)
+        if (cloud.enrolled) { cloud.forget(); _cloudLink.value = cloud.link(); _account.value = null }
         _isLoggedIn.value = false; _username.value = ""
     }
 
@@ -1168,7 +1233,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     /**
      * Export automat ANAF pentru LUNA ANTERIOARA (in iunie → luna mai etc).
      * Computeaza intervalul DD-MM-YY in formatul Datecs si lanseaza downloadAnafFiles.
-     * autoCloudUpload() se va declansa automat la succes (vezi flow downloadAnafFiles).
+     * uploadToCloud() se declanseaza automat la succes (vezi downloadAnafFiles).
      */
     fun exportPreviousMonth(clientName: String, basePath: String) {
         val cal = Calendar.getInstance()
@@ -1209,7 +1274,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                     serialNumber = _deviceState.value.serialNumber, basePath = writableBasePath(basePath)
                 ) { current, total, fileName -> _anafDownloadProgress.value = "Descarcare $current/$total: $fileName" }
                 _lastAnafResult.value = result
-                if (result.success) { showToast("${result.fileCount} fisiere descarcate!", "success"); autoCloudUpload() }
+                if (result.success) { showToast("${result.fileCount} fisiere descarcate!", "success"); uploadToCloud() }
                 else showToast("Eroare: ${result.error}", "error")
             } catch (e: Exception) {
                 _lastAnafResult.value = AnafDownloadResult(false, 0, "", emptyList(), "Eroare: ${e.message}")
@@ -1219,41 +1284,96 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
-    // ==================== AUTO CLOUD UPLOAD ====================
+    // ==================== CLOUD (asociere + upload) ====================
 
-    private fun autoCloudUpload() {
+    /** Asociere cu codul generat in cloud.itsmart.ro; daca exista fisiere descarcate netrimise, se trimit imediat. */
+    fun pairCloud(code: String) {
+        if (code.isBlank() || _cloudPairing.value) return
         viewModelScope.launch {
-            try {
-                val (_, cif, _) = parseHeaderInfo()
-                if (cif.isEmpty() || cif.length < 5) return@launch
-                fetchCloudToken(cif) { token, _ -> if (token.isNotEmpty()) uploadToCloud(token) }
-            } catch (e: Exception) { addLog("CLOUD", "Auto-upload EROARE", e.message, false) }
+            _cloudPairing.value = true; _cloudPairMessage.value = ""
+            val r = cloud.pair(code)
+            _cloudLink.value = cloud.link()
+            _cloudPairing.value = false
+            if (r.ok) {
+                addLog("CLOUD", "Asociere cu cod", r.message, true)
+                _cloudPairMessage.value = "Asociat cu ${r.message}"
+                if (pendingCloudUpload) uploadToCloud()
+            } else {
+                addLog("CLOUD", "Asociere esuata", r.message, false)
+                _cloudPairMessage.value = r.message
+            }
         }
     }
 
-    // ==================== CLOUD UPLOAD ====================
+    fun unpairCloud() {
+        cloud.forget()
+        _cloudLink.value = cloud.link()
+        _cloudPairMessage.value = ""
+        addLog("CLOUD", "Asociere stearsa", null, true)
+    }
 
-    fun fetchCloudToken(cui: String, onResult: (token: String, companyName: String) -> Unit) {
+    /** Fisierele descarcate asteapta asocierea (se trimit dupa ce se introduce codul). */
+    private var pendingCloudUpload = false
+
+    /**
+     * Fara asociere, se incearca o data asocierea automata (aparatul inregistrat la firma: CUI + serie / nr. fiscal),
+     * permisa de cloud pana la 31.01.2027. Altfel e nevoie de codul de asociere din cloud.itsmart.ro.
+     */
+    private suspend fun ensureCloudLink(): Boolean {
+        if (cloud.link().paired) return true
+        val (_, cif, _) = parseHeaderInfo()
+        val ds = _deviceState.value
+        if (cif.length >= 5) for (serie in listOf(ds.serialNumber, ds.fiscalNumber).filter { it.isNotBlank() }.distinct()) {
+            val r = cloud.migrate(cif, serie)
+            addLog("CLOUD", "Asociere automata ($serie)", r.message, r.ok)
+            if (r.ok) { _cloudLink.value = cloud.link(); return true }
+        }
+        return false
+    }
+
+    fun uploadToCloud() {
+        if (_cloudUploading.value) return
         viewModelScope.launch {
-            if (cui.isBlank() || cui.length < 5) { _cloudTokenInfo.value = "CUI invalid: $cui"; onResult("", ""); return@launch }
-            _cloudTokenInfo.value = "Se cauta token pentru $cui..."
+            val result = _lastAnafResult.value
+            if (result == null || !result.success || result.savedPath.isEmpty()) return@launch
+            _cloudUploading.value = true; _cloudResult.value = ""
             try {
-                val response = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
-                    val urlStr = "https://cloud.itsmart.ro/api/get_token?cui=${java.net.URLEncoder.encode(cui, "UTF-8")}"
-                    val conn = java.net.URL(urlStr).openConnection() as java.net.HttpURLConnection
-                    conn.requestMethod = "GET"; conn.connectTimeout = 10000; conn.readTimeout = 10000
-                    val code = conn.responseCode
-                    val body = try { if (code in 200..299) conn.inputStream.bufferedReader().readText() else conn.errorStream?.bufferedReader()?.readText() ?: "" } catch (_: Exception) { "" }
-                    conn.disconnect(); Pair(code, body)
+                if (!ensureCloudLink()) {
+                    pendingCloudUpload = true
+                    _cloudResult.value = "EROARE: Aplicatia nu este asociata cu cloud.itsmart.ro. Introduceti codul de asociere (sus, pe aceasta pagina)."
+                    return@launch
                 }
-                val (code, body) = response
-                if (code == 200 && body.isNotEmpty()) {
-                    val json = org.json.JSONObject(body)
-                    val token = json.optString("api_token", ""); val company = json.optString("company_name", "")
-                    if (token.isNotEmpty()) { _cloudTokenInfo.value = "Token gasit: $company"; onResult(token, company) }
-                    else { _cloudTokenInfo.value = "Client negasit pentru CUI: $cui"; onResult("", "") }
-                } else { _cloudTokenInfo.value = "Client negasit pentru CUI: $cui"; onResult("", "") }
-            } catch (e: Exception) { _cloudTokenInfo.value = "Eroare: ${e.message}"; onResult("", "") }
+                val (_, cif, _) = parseHeaderInfo()
+                val folder = File(result.savedPath)
+                if (!folder.exists() || !folder.isDirectory) { _cloudResult.value = "EROARE: Folder inexistent"; return@launch }
+                val allFiles = folder.listFiles()?.filter { it.isFile } ?: emptyList()
+                if (allFiles.isEmpty()) { _cloudResult.value = "EROARE: Niciun fisier"; return@launch }
+
+                val folderInfo = parseFolderInfo(folder.name)
+                val p7bFiles = allFiles.filter { it.extension.lowercase() == "p7b" }
+                val firstP7b = p7bFiles.firstOrNull { it.name.contains("_Z") }
+                val serieAmef = firstP7b?.name?.split("_Z")?.firstOrNull() ?: _deviceState.value.serialNumber
+                val pdfFiles = allFiles.filter { it.extension.lowercase() == "pdf" }
+
+                val zipFile = File(folder.parent, "${folderInfo.lunaText}_${folderInfo.anul}.zip")
+                kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+                    java.util.zip.ZipOutputStream(java.io.FileOutputStream(zipFile)).use { zos ->
+                        for (file in p7bFiles) { zos.putNextEntry(java.util.zip.ZipEntry(file.name)); file.inputStream().use { it.copyTo(zos) }; zos.closeEntry() }
+                    }
+                }
+                val r = cloud.upload(listOf(zipFile) + pdfFiles, cif, serieAmef, folderInfo.luna, folderInfo.anul)
+                _cloudLink.value = cloud.link()
+                if (r.ok) {
+                    pendingCloudUpload = false
+                    _cloudResult.value = "OK — ${r.uploaded} fisiere incarcate" + if (r.skipped > 0) ", ${r.skipped} ignorate" else ""
+                    addLog("CLOUD", "Upload OK", _cloudResult.value, true)
+                } else {
+                    if (r.unauthorized) pendingCloudUpload = true
+                    _cloudResult.value = "EROARE: ${r.error}"
+                    addLog("CLOUD", "Upload ESUAT", r.error, false)
+                }
+            } catch (e: Exception) { _cloudResult.value = "EROARE: ${e.message}"; addLog("CLOUD", "Upload EXCEPTIE", e.message, false) }
+            finally { _cloudUploading.value = false }
         }
     }
 
@@ -1270,67 +1390,6 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         val dbIdx = folderName.indexOf("_DB")
         val clientFromFolder = if (dbIdx > 0) folderName.substring(0, dbIdx).replace("_", " ") else ""
         return FolderInfo(clientFromFolder, luna, anul, lunaTextRaw)
-    }
-
-    fun uploadToCloud(apiToken: String) {
-        viewModelScope.launch {
-            _cloudUploading.value = true; _cloudResult.value = ""
-            val result = _lastAnafResult.value
-            if (result == null || !result.success || result.savedPath.isEmpty()) { _cloudUploading.value = false; return@launch }
-            if (apiToken.isBlank()) { _cloudUploading.value = false; return@launch }
-            try {
-                val (_, cif, _) = parseHeaderInfo()
-                val folder = File(result.savedPath)
-                if (!folder.exists() || !folder.isDirectory) { _cloudResult.value = "EROARE: Folder inexistent"; _cloudUploading.value = false; return@launch }
-                val allFiles = folder.listFiles()?.filter { it.isFile } ?: emptyList()
-                if (allFiles.isEmpty()) { _cloudResult.value = "EROARE: Niciun fisier"; _cloudUploading.value = false; return@launch }
-
-                val folderInfo = parseFolderInfo(folder.name)
-                val p7bFiles = allFiles.filter { it.extension.lowercase() == "p7b" }
-                val firstP7b = p7bFiles.firstOrNull { it.name.contains("_Z") }
-                val serieAmef = firstP7b?.name?.split("_Z")?.firstOrNull() ?: _deviceState.value.serialNumber
-                val pdfFiles = allFiles.filter { it.extension.lowercase() == "pdf" }
-
-                val zipFileName = "${folderInfo.lunaText}_${folderInfo.anul}.zip"
-                val zipFile = File(folder.parent, zipFileName)
-                kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
-                    java.util.zip.ZipOutputStream(java.io.FileOutputStream(zipFile)).use { zos ->
-                        for (file in p7bFiles) { zos.putNextEntry(java.util.zip.ZipEntry(file.name)); file.inputStream().use { it.copyTo(zos) }; zos.closeEntry() }
-                    }
-                }
-
-                val filesToUpload = mutableListOf(zipFile); filesToUpload.addAll(pdfFiles)
-                val response = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
-                    val boundary = "----CloudUpload${System.currentTimeMillis()}"
-                    val conn = java.net.URL("https://cloud.itsmart.ro/api/upload_xml").openConnection() as java.net.HttpURLConnection
-                    conn.requestMethod = "POST"
-                    conn.setRequestProperty("Authorization", "Bearer $apiToken")
-                    conn.setRequestProperty("Content-Type", "multipart/form-data; boundary=$boundary")
-                    conn.doOutput = true; conn.connectTimeout = 60000; conn.readTimeout = 120000
-                    conn.outputStream.use { output ->
-                        for ((key, value) in mapOf("cui" to cif, "serie_aparat" to serieAmef, "sursa" to "android", "luna" to folderInfo.luna.toString(), "anul" to folderInfo.anul.toString())) {
-                            if (value.isNotEmpty()) { output.write("--$boundary\r\n".toByteArray()); output.write("Content-Disposition: form-data; name=\"$key\"\r\n\r\n".toByteArray()); output.write("$value\r\n".toByteArray()) }
-                        }
-                        for (file in filesToUpload) {
-                            val ct = if (file.extension.lowercase() == "zip") "application/zip" else "application/pdf"
-                            output.write("--$boundary\r\n".toByteArray()); output.write("Content-Disposition: form-data; name=\"files[]\"; filename=\"${file.name}\"\r\n".toByteArray())
-                            output.write("Content-Type: $ct\r\n\r\n".toByteArray()); output.flush(); file.inputStream().use { it.copyTo(output) }; output.flush(); output.write("\r\n".toByteArray())
-                        }
-                        output.write("--$boundary--\r\n".toByteArray()); output.flush()
-                    }
-                    val code = conn.responseCode
-                    val body = try { if (code in 200..299) conn.inputStream.bufferedReader().readText() else conn.errorStream?.bufferedReader()?.readText() ?: "HTTP $code" } catch (_: Exception) { "HTTP $code" }
-                    conn.disconnect(); Pair(code, body)
-                }
-                val (code, body) = response
-                if (code in 200..299) {
-                    try { val json = org.json.JSONObject(body); _cloudResult.value = "OK — ${json.optInt("uploaded", 0)} fisiere incarcate" + if (json.optInt("skipped", 0) > 0) ", ${json.optInt("skipped")} ignorate" else "" }
-                    catch (_: Exception) { _cloudResult.value = "OK — Upload reusit!" }
-                    addLog("CLOUD", "Upload OK", body.take(300), true)
-                } else { _cloudResult.value = "EROARE HTTP $code: ${body.take(200)}"; addLog("CLOUD", "Upload ESUAT", body.take(300), false) }
-            } catch (e: Exception) { _cloudResult.value = "EROARE: ${e.message}"; addLog("CLOUD", "Upload EXCEPTIE", e.message, false) }
-            _cloudUploading.value = false
-        }
     }
 
     // ==================== HELPERS ====================

@@ -27,7 +27,8 @@ import com.itsmart.datecs.client.ui.theme.AppColors
 fun LoginScreen(
     isLoading: Boolean,
     errorMessage: String,
-    onLogin: (String, String) -> Unit
+    onLogin: (String, String) -> Unit,
+    onEnroll: () -> Unit = {}
 ) {
     var username by remember { mutableStateOf("") }
     var password by remember { mutableStateOf("") }
@@ -155,7 +156,10 @@ fun LoginScreen(
                 }
             }
 
-            Spacer(modifier = Modifier.height(24.dp))
+            TextButton(onClick = onEnroll, modifier = Modifier.padding(top = 12.dp)) {
+                Text("Nu aveti cont? Inregistrati firma", color = AppColors.Primary, fontWeight = FontWeight.W700, fontSize = 14.sp)
+            }
+            Spacer(modifier = Modifier.height(12.dp))
             Text(
                 "cloud.itsmart.ro",
                 color = AppColors.TextTertiary,

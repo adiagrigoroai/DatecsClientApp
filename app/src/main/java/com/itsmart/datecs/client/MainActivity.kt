@@ -200,12 +200,28 @@ fun MainContent(viewModel: MainViewModel = viewModel()) {
     val loginLoading by viewModel.loginLoading.collectAsStateWithLifecycle()
     val loginError by viewModel.loginError.collectAsStateWithLifecycle()
 
+    val account by viewModel.account.collectAsStateWithLifecycle()
+    val enrollLoading by viewModel.enrollLoading.collectAsStateWithLifecycle()
+    val enrollError by viewModel.enrollError.collectAsStateWithLifecycle()
+    var showEnroll by remember { mutableStateOf(false) }
+
     if (!isLoggedIn) {
-        LoginScreen(
+        if (showEnroll) EnrollScreen(enrollLoading, enrollError, onEnroll = { c, e, p -> viewModel.enroll(c, e, p) }, onBack = { showEnroll = false })
+        else LoginScreen(
             isLoading = loginLoading,
             errorMessage = loginError,
-            onLogin = { user, pass -> viewModel.login(user, pass) }
+            onLogin = { user, pass -> viewModel.login(user, pass) },
+            onEnroll = { showEnroll = true }
         )
+        return
+    }
+
+    // aparat inrolat din aplicatie: conectarea la casa si exportul doar cu contul activ (email confirmat + plata)
+    val accountNotice by viewModel.accountNotice.collectAsStateWithLifecycle()
+    val pending = account
+    if (pending != null && !pending.active) {
+        AccountStatusScreen(pending, accountNotice, onRefresh = { viewModel.refreshAccount() }, onResend = { viewModel.resendConfirmation() },
+            onLeave = { showEnroll = false; viewModel.leaveEnrollment() })
         return
     }
 

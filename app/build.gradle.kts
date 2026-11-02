@@ -18,8 +18,8 @@ android {
         applicationId = "com.itsmart.datecs.client"
         minSdk = 28
         targetSdk = 34
-        versionCode = 3
-        versionName = "1.0.2"
+        versionCode = 6
+        versionName = "1.0.5"
     }
 
     // Cheia de semnare: keystore.properties (in afara git) — storeFile, storePassword, keyAlias, keyPassword
