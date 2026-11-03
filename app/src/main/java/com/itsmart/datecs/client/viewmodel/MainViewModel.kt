@@ -315,6 +315,13 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                     rememberOfflineCredentials(user, password)
                     _username.value = user; _isLoggedIn.value = true
                     addLog("AUTH", "Login OK", "user=$user", true)
+                    // acelasi cont pe toate telefoanele firmei: telefonul se asociaza cu firma (fisierele urca in cloud)
+                    if (!_cloudLink.value.paired) {
+                        val r = cloud.login(user, password)
+                        _cloudLink.value = cloud.link()
+                        addLog("CLOUD", if (r.ok) "Telefon asociat cu firma" else "Asociere cu firma esuata", r.message, r.ok)
+                        if (!r.ok) _cloudPairMessage.value = r.message
+                    }
                 } else {
                     // cloud.itsmart.ro raspunde cu redirect si la succes, si la eroare: orice altceva nu e autentificare
                     _loginError.value = "Eroare server (HTTP $code)"
@@ -1505,7 +1512,9 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                         for (file in p7bFiles) { zos.putNextEntry(java.util.zip.ZipEntry(file.name)); file.inputStream().use { it.copyTo(zos) }; zos.closeEntry() }
                     }
                 }
-                val r = cloud.upload(listOf(zipFile) + pdfFiles, cif, serieAmef, folderInfo.luna, folderInfo.anul)
+                val adresa = parseHeaderInfo().third
+                val r = cloud.upload(listOf(zipFile) + pdfFiles, cif, serieAmef, folderInfo.luna, folderInfo.anul,
+                    locatie = adresa, model = _deviceState.value.model)
                 _cloudLink.value = cloud.link()
                 if (r.ok) {
                     pendingCloudUpload = false

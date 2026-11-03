@@ -178,7 +178,14 @@ fun LoginScreen(
                 }
             }
 
-            TextButton(onClick = { showCode = true }, modifier = Modifier.padding(top = 8.dp)) {
+            val ctx = androidx.compose.ui.platform.LocalContext.current
+            TextButton(onClick = {
+                try { ctx.startActivity(android.content.Intent(android.content.Intent.ACTION_VIEW,
+                    android.net.Uri.parse("https://cloud.itsmart.ro/parola-uitata"))) } catch (_: Exception) {}
+            }, modifier = Modifier.padding(top = 4.dp)) {
+                Text("Ați uitat parola?", color = AppColors.TextSecondary, fontWeight = FontWeight.W600, fontSize = 14.sp)
+            }
+            TextButton(onClick = { showCode = true }) {
                 Text("Am un cod de asociere", color = AppColors.Primary, fontWeight = FontWeight.W700, fontSize = 14.sp)
             }
             TextButton(onClick = onEnroll) {

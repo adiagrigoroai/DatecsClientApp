@@ -134,6 +134,10 @@ class CloudUploadService(context: Context) {
     /** Asociere cu codul din cloud.itsmart.ro (ex. "ABCD-2345"). */
     suspend fun pair(code: String): Result = issue("/api/v2/pair", mapOf("code" to code.trim()), "pair")
 
+    /** Orice telefon al firmei: emailul si parola contului firmei (aceleasi pentru toate locatiile). */
+    suspend fun login(email: String, password: String): Result =
+        issue("/api/v2/login", mapOf("email" to email.trim().lowercase(), "password" to password), "login")
+
     /** Asociere automata pentru aparatele deja inregistrate la firma (CUI + seria aparatului). */
     suspend fun migrate(cui: String, serie: String): Result =
         issue("/api/v2/migrate", mapOf("cui" to normalizeCui(cui), "serie" to serie.trim()), "migrate")
@@ -277,7 +281,8 @@ class CloudUploadService(context: Context) {
     }
 
     /** Urca fisierele (ZIP cu p7b + PDF-uri) pentru luna/anul dat. */
-    suspend fun upload(files: List<File>, cui: String, serieAparat: String, luna: Int, anul: Int): UploadResult = withContext(Dispatchers.IO) {
+    suspend fun upload(files: List<File>, cui: String, serieAparat: String, luna: Int, anul: Int,
+                       locatie: String = "", model: String = ""): UploadResult = withContext(Dispatchers.IO) {
         val t = token().ifEmpty { return@withContext UploadResult(false, error = "Aplicatia nu este asociata cu cloud.itsmart.ro", unauthorized = true) }
         val real = files.filter { it.isFile && it.length() > 0 }
         if (real.isEmpty()) return@withContext UploadResult(false, error = "Niciun fisier de trimis")
@@ -299,6 +304,9 @@ class CloudUploadService(context: Context) {
                 field("sursa", "android")
                 field("luna", luna.toString())
                 field("anul", anul.toString())
+                // casa noua a firmei apare singura in cloud, cu locatia din antetul fiscal
+                if (locatie.isNotBlank()) field("locatie", locatie)
+                if (model.isNotBlank()) field("model", model)
                 field("session_id", SimpleDateFormat("yyyyMMdd_HHmmss", Locale.US).format(Date()) + "_android")
                 for (f in real) {
                     val type = when (f.extension.lowercase()) { "zip" -> "application/zip"; "pdf" -> "application/pdf"; else -> "application/octet-stream" }
