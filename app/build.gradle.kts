@@ -19,7 +19,7 @@ android {
         minSdk = 28
         targetSdk = 34
         versionCode = 15
-        versionName = "1.0.10"
+        versionName = "1.0.14"
     }
 
     // Cheia de semnare: keystore.properties (in afara git) — storeFile, storePassword, keyAlias, keyPassword
