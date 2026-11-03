@@ -210,6 +210,9 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     private val _reportPreviewLoading = MutableStateFlow(false)
     val reportPreviewLoading: StateFlow<Boolean> = _reportPreviewLoading.asStateFlow()
     /** Raport MF: ce se face acum ("" = nimic) si rezultatul ultimei actiuni (ok, mesaj). */
+    /** Emailul dupa export: (true = trimis / false = eroare / null = in curs sau email nesetat, mesaj). */
+    private val _exportEmail = MutableStateFlow<Pair<Boolean?, String>?>(null)
+    val exportEmail: StateFlow<Pair<Boolean?, String>?> = _exportEmail.asStateFlow()
     private val _fmBusy = MutableStateFlow("")
     val fmBusy: StateFlow<String> = _fmBusy.asStateFlow()
     private val _fmResult = MutableStateFlow<Pair<Boolean, String>?>(null)
@@ -1382,7 +1385,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
     fun downloadAnafFiles(from: String, to: String, clientName: String, basePath: String) {
         viewModelScope.launch {
-            _anafDownloading.value = true; _anafDownloadProgress.value = "Initializare..."; _lastAnafResult.value = null
+            _anafDownloading.value = true; _anafDownloadProgress.value = "Initializare..."; _lastAnafResult.value = null; _exportEmail.value = null
             if (clientName.isNotEmpty()) saveClientName(clientName)
             if (basePath.isNotEmpty()) saveBasePath(basePath)
             try {
@@ -1508,6 +1511,11 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                     pendingCloudUpload = false
                     _cloudResult.value = "OK — ${r.uploaded} fisiere incarcate" + if (r.skipped > 0) ", ${r.skipped} ignorate" else ""
                     addLog("CLOUD", "Upload OK", _cloudResult.value, true)
+                    // emailul catre adresa setata pleaca imediat, ca utilizatorul sa vada confirmarea aici
+                    _exportEmail.value = null to "Se trimite pe email…"
+                    val (mailOk, mailMsg) = cloud.sendNow()
+                    _exportEmail.value = mailOk to mailMsg
+                    addLog("EMAIL", "Export pe email", mailMsg, mailOk == true)
                 } else {
                     if (r.unauthorized) pendingCloudUpload = true
                     _cloudResult.value = "EROARE: ${r.error}"

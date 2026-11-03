@@ -37,10 +37,13 @@ class AnafDownloader(private val connection: DudeDeviceConnection) {
          * Build structured folder name: {NumeClient}_{SerieAparat}_{Luna}_{An}
          * Example: "McDonaldsSRL_DT123456_Februarie_2026"
          */
-        fun buildFolderName(clientName: String, serialNumber: String): String {
+        fun buildFolderName(clientName: String, serialNumber: String, from: String = ""): String {
+            // luna PENTRU care se exporta (inceputul intervalului "DD-MM-YY ..."), nu luna in care se face exportul;
+            // la intervalul pe nr. Z (fara data) ramane luna curenta
+            val m = Regex("""^(\d{2})-(\d{2})-(\d{2})""").find(from.trim())
             val cal = Calendar.getInstance()
-            val luna = LUNI_RO[cal.get(Calendar.MONTH)]
-            val an = cal.get(Calendar.YEAR)
+            val luna = m?.let { LUNI_RO[(it.groupValues[2].toInt() - 1).coerceIn(0, 11)] } ?: LUNI_RO[cal.get(Calendar.MONTH)]
+            val an = m?.let { 2000 + it.groupValues[3].toInt() } ?: cal.get(Calendar.YEAR)
             val safeName = sanitizePath(clientName.ifEmpty { "Client" })
             val safeSerial = sanitizePath(serialNumber.ifEmpty { "UNKNOWN" })
             return "${safeName}_${safeSerial}_${luna}_$an"
@@ -116,8 +119,11 @@ class AnafDownloader(private val connection: DudeDeviceConnection) {
             } else {
                 File(Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOCUMENTS), "DatecsANAF")
             }
-            val folderName = buildFolderName(clientName, serialNumber)
+            val folderName = buildFolderName(clientName, serialNumber, from)
             val outputDir = File(baseDir, folderName)
+            // folderul contine doar exportul de acum: fisierele unui export anterior pe aceeasi luna (alt interval)
+            // ar ajunge altfel in arhiva trimisa in cloud
+            outputDir.listFiles()?.filter { it.isFile && it.extension.lowercase() in setOf("p7b", "xml", "pdf") }?.forEach { it.delete() }
             if (!outputDir.exists()) {
                 val created = outputDir.mkdirs()
                 Log.d(TAG, "Step 2: Output dir created=$created: ${outputDir.absolutePath}")

@@ -205,6 +205,28 @@ class CloudUploadService(context: Context) {
         } catch (e: Exception) { null to (e.message ?: "fara conexiune") }
     }
 
+    /** Dupa upload: fisierele pleaca acum la emailul setat (fara asteptarea din cloud). (ok, mesaj); ok=null cand nu e setat emailul. */
+    suspend fun sendNow(): Pair<Boolean?, String> = withContext(Dispatchers.IO) {
+        val t = token().ifEmpty { return@withContext false to "Aplicatia nu este asociata cu cloud.itsmart.ro" }
+        try {
+            val c = (URL("$BASE_URL/api/v2/send-now").openConnection() as HttpURLConnection).apply {
+                requestMethod = "POST"; doOutput = true; connectTimeout = 20_000; readTimeout = 60_000
+                setRequestProperty("Authorization", "Bearer $t")
+                setRequestProperty("User-Agent", "ITSmartClient/${BuildConfig.VERSION_NAME}")
+            }
+            c.outputStream.use { }
+            val (code, body) = read(c)
+            if (code !in 200..299) return@withContext false to detail(body)
+            val j = JSONObject(body)
+            when {
+                j.optString("reason") == "no_email" -> null to "Emailul nu este setat (Setari → Contabilitate)"
+                !j.optBoolean("ok") -> false to j.optString("detail")
+                j.optInt("files") == 0 -> true to "Deja trimise pe ${j.optString("to")}"
+                else -> true to "Trimise pe email la ${j.optString("to")}"
+            }
+        } catch (e: Exception) { false to (e.message ?: "fara conexiune") }
+    }
+
     /** Raportul MF pe emailul setat in aplicatie (contabilul firmei), cu PDF + TXT atasate. Intoarce (ok, mesaj). */
     suspend fun sendFmReport(pdf: File, text: String, name: String, serie: String, title: String): Pair<Boolean, String> = withContext(Dispatchers.IO) {
         val t = token().ifEmpty { return@withContext false to "Aplicatia nu este asociata cu cloud.itsmart.ro (Setari → Cloud)" }

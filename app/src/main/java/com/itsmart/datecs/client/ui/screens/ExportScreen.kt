@@ -56,6 +56,7 @@ fun ExportScreen(viewModel: MainViewModel, deviceState: DeviceState) {
     val cloudResult by viewModel.cloudResult.collectAsStateWithLifecycle()
     val cloudUploading by viewModel.cloudUploading.collectAsStateWithLifecycle()
     val cloudLink by viewModel.cloudLink.collectAsStateWithLifecycle()
+    val exportEmail by viewModel.exportEmail.collectAsStateWithLifecycle()
 
     val prevMonth = remember { Calendar.getInstance().apply { add(Calendar.MONTH, -1) } }
     val lunaTrecuta = remember { AnafDownloader.LUNI_RO[prevMonth.get(Calendar.MONTH)] }
@@ -182,7 +183,7 @@ fun ExportScreen(viewModel: MainViewModel, deviceState: DeviceState) {
         // ===== 2. export =====
         SoftCard(padding = 16.dp) {
             StepTitle("2", "Exportă fișierele")
-            Text(if (cloudLink.paired) "Fișierele XML se descarcă de pe casă și se trimit automat în cloud.itsmart.ro (și contabilului, dacă e setat)."
+            Text(if (cloudLink.paired) "Fișierele XML se descarcă de pe casă, se arhivează în cloud.itsmart.ro și pleacă automat pe emailul setat în Setări → Contabilitate."
                  else "Fișierele XML se descarcă pe acest aparat. Ca să ajungă automat în cloud, asociați aplicația din Setări → Cloud.",
                 fontSize = 13.sp, color = AppColors.TextSecondary, lineHeight = 18.sp, modifier = Modifier.padding(top = 6.dp, bottom = 12.dp))
             PrimaryButton(if (downloading) "Se descarcă…" else "Exportă $descriere", Icons.Filled.Download,
@@ -205,12 +206,21 @@ fun ExportScreen(viewModel: MainViewModel, deviceState: DeviceState) {
                             cloudResult.isNotEmpty() -> "Cloud: $cloudResult"
                             else -> "Salvate pe aparat"
                         }, AppColors.Success, AppColors.SuccessBg)
+                    exportEmail?.let { (ok, msg) ->
+                        Spacer(Modifier.height(8.dp))
+                        when (ok) {
+                            true -> NoticeCard(Icons.Filled.MarkEmailRead, "Trimis pe email", msg.removePrefix("Trimise pe email la "), AppColors.Success, AppColors.SuccessBg)
+                            false -> NoticeCard(Icons.Filled.ErrorOutline, "Emailul nu a plecat", "$msg. Se reîncearcă automat din cloud.", AppColors.Danger, AppColors.DangerBg)
+                            null -> NoticeCard(Icons.Filled.Email, if (msg.startsWith("Se trimite")) msg else "Email nesetat",
+                                if (msg.startsWith("Se trimite")) "" else msg, AppColors.Info, AppColors.InfoBg)
+                        }
+                    }
                     Spacer(Modifier.height(10.dp))
                     if (cloudResult.isNotEmpty() && !cloudOk && !cloudUploading && cloudLink.paired) {
                         OutlineButton("Trimite din nou în cloud", Icons.Filled.CloudUpload) { viewModel.uploadToCloud() }
                         Spacer(Modifier.height(8.dp))
                     }
-                    OutlineButton("Trimite pe email (ZIP)", Icons.Filled.Email) {
+                    OutlineButton("Trimite manual (alt email)", Icons.Filled.Share) {
                         val zipUri = viewModel.createZipFromAnafFiles()
                         if (zipUri != null) {
                             val intent = viewModel.createXmlEmailIntent(zipUri, firma, descriere, deviceState.serialNumber, deviceState.fiscalNumber, result.fileCount)
