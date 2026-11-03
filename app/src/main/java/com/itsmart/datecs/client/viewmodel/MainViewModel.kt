@@ -209,6 +209,11 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     val reportPreviewText: StateFlow<String> = _reportPreviewText.asStateFlow()
     private val _reportPreviewLoading = MutableStateFlow(false)
     val reportPreviewLoading: StateFlow<Boolean> = _reportPreviewLoading.asStateFlow()
+    /** Raport MF: ce se face acum ("" = nimic) si rezultatul ultimei actiuni (ok, mesaj). */
+    private val _fmBusy = MutableStateFlow("")
+    val fmBusy: StateFlow<String> = _fmBusy.asStateFlow()
+    private val _fmResult = MutableStateFlow<Pair<Boolean, String>?>(null)
+    val fmResult: StateFlow<Pair<Boolean, String>?> = _fmResult.asStateFlow()
 
     // LAN History
     data class LanHistoryEntry(val address: String, val name: String, val info: String, val lastUsed: Long)
@@ -1275,31 +1280,68 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     // ==================== REPORTS ====================
 
     fun executeFiscalReportByDate(startDate: String, endDate: String, detailed: Boolean) {
-        viewModelScope.launch {
+        printFm("$startDate – $endDate") {
             val tip = if (detailed) "1" else "0"
-            val r = connection.executeCommand(94, "$tip,$startDate,$endDate")
-            addLog("CMD94", "Raport MF ($tip, $startDate, $endDate)", r.rawOutput, r.success)
-            if (r.success) showToast("Raport MF generat", "success") else showToast("Eroare: ${r.rawOutput}", "error")
+            connection.executeCommand(94, "$tip,$startDate,$endDate")
         }
     }
 
     fun executeFiscalReportByZ(zStart: String, zEnd: String, detailed: Boolean) {
-        viewModelScope.launch {
+        printFm("Z $zStart – $zEnd") {
             val tip = if (detailed) "1" else "0"
-            val r = connection.executeCommand(95, "$tip,$zStart,$zEnd")
-            addLog("CMD95", "Raport MF Z ($tip, $zStart, $zEnd)", r.rawOutput, r.success)
-            if (r.success) showToast("Raport MF generat", "success") else showToast("Eroare: ${r.rawOutput}", "error")
+            connection.executeCommand(95, "$tip,$zStart,$zEnd")
+        }
+    }
+
+    private fun printFm(interval: String, cmd: suspend () -> CommandResult) {
+        if (_fmBusy.value.isNotEmpty()) return
+        viewModelScope.launch {
+            _fmBusy.value = "Se tipărește raportul pe casă…"; _fmResult.value = null
+            try {
+                val r = cmd()
+                addLog("CMD95", "Raport MF ($interval)", r.rawOutput, r.success)
+                _fmResult.value = if (r.success) true to "Raportul ($interval) a fost tipărit pe casă"
+                                  else false to "Casa a refuzat raportul: ${r.rawOutput}"
+            } catch (e: Exception) { _fmResult.value = false to "Eroare: ${e.message}" }
+            _fmBusy.value = ""
         }
     }
 
     fun previewFiscalReportByZ(zStart: String, zEnd: String, detailed: Boolean) {
+        if (_fmBusy.value.isNotEmpty()) return
+        viewModelScope.launch { readFmText(zStart, zEnd, detailed) }
+    }
+
+    private suspend fun readFmText(zStart: String, zEnd: String, detailed: Boolean): String? {
+        _reportPreviewLoading.value = true; _fmBusy.value = "Se citește raportul din memoria fiscală…"; _fmResult.value = null
+        val text = try {
+            val lines = connection.readFiscalReportByZText(zStart, zEnd, detailed)
+            if (lines.isEmpty()) { _fmResult.value = false to "Nicio înregistrare pentru Z $zStart – $zEnd"; null } else lines.joinToString("\n")
+        } catch (e: Exception) { _fmResult.value = false to "Eroare la citire: ${e.message}"; null }
+        _reportPreviewText.value = text ?: ""
+        _reportPreviewLoading.value = false; _fmBusy.value = ""
+        return text
+    }
+
+    /**
+     * Raportul MF pe emailul setat in aplicatie (Setari > Contabilitate), ca PDF + TXT atasate.
+     * Emailul pleaca din cloud.itsmart.ro (aplicatia nu are cont de email); citeste raportul daca nu e deja pe ecran.
+     */
+    fun sendFmReportByEmail(zStart: String, zEnd: String, detailed: Boolean) {
+        if (_fmBusy.value.isNotEmpty()) return
         viewModelScope.launch {
-            _reportPreviewLoading.value = true; _reportPreviewText.value = "Citire raport..."
-            try {
-                val lines = connection.readFiscalReportByZText(zStart, zEnd, detailed)
-                _reportPreviewText.value = if (lines.isEmpty()) "Nicio inregistrare." else lines.joinToString("\n")
-            } catch (e: Exception) { _reportPreviewText.value = "Eroare: ${e.message}" }
-            _reportPreviewLoading.value = false
+            val text = _reportPreviewText.value.takeIf { it.isNotBlank() } ?: readFmText(zStart, zEnd, detailed) ?: return@launch
+            _fmBusy.value = "Se trimite raportul pe email…"
+            val ds = _deviceState.value
+            val name = "Raport_MF_${ds.serialNumber}_Z${zStart}-${zEnd}${if (detailed) "_detaliat" else ""}"
+            val pdf = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+                generatePvPdf(text, "$name.pdf"); File(getApplication<Application>().cacheDir, "$name.pdf")
+            }
+            val (ok, msg) = cloud.sendFmReport(pdf, text, name, ds.serialNumber,
+                "Raport memorie fiscală ${if (detailed) "detaliat" else "sumar"} Z $zStart – $zEnd")
+            _fmResult.value = ok to msg
+            addLog("EMAIL", "Raport MF pe email", msg, ok)
+            _fmBusy.value = ""
         }
     }
 

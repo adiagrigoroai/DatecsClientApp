@@ -205,6 +205,35 @@ class CloudUploadService(context: Context) {
         } catch (e: Exception) { null to (e.message ?: "fara conexiune") }
     }
 
+    /** Raportul MF pe emailul setat in aplicatie (contabilul firmei), cu PDF + TXT atasate. Intoarce (ok, mesaj). */
+    suspend fun sendFmReport(pdf: File, text: String, name: String, serie: String, title: String): Pair<Boolean, String> = withContext(Dispatchers.IO) {
+        val t = token().ifEmpty { return@withContext false to "Aplicatia nu este asociata cu cloud.itsmart.ro (Setari → Cloud)" }
+        val boundary = "----ITSmartClient" + UUID.randomUUID().toString().replace("-", "")
+        try {
+            val c = (URL("$BASE_URL/api/v2/fm-report").openConnection() as HttpURLConnection).apply {
+                requestMethod = "POST"; doOutput = true; useCaches = false
+                connectTimeout = 30_000; readTimeout = 60_000
+                setRequestProperty("Authorization", "Bearer $t")
+                setRequestProperty("Content-Type", "multipart/form-data; boundary=$boundary")
+                setRequestProperty("User-Agent", "ITSmartClient/${BuildConfig.VERSION_NAME}")
+            }
+            c.outputStream.buffered().use { out ->
+                fun field(n: String, v: String) =
+                    out.write("--$boundary\r\nContent-Disposition: form-data; name=\"$n\"\r\n\r\n$v\r\n".toByteArray(Charsets.UTF_8))
+                field("serie_aparat", serie); field("title", title); field("name", name); field("text", text)
+                if (pdf.isFile) {
+                    out.write("--$boundary\r\nContent-Disposition: form-data; name=\"pdf\"; filename=\"$name.pdf\"\r\nContent-Type: application/pdf\r\n\r\n".toByteArray())
+                    pdf.inputStream().use { it.copyTo(out) }
+                    out.write("\r\n".toByteArray())
+                }
+                out.write("--$boundary--\r\n".toByteArray())
+            }
+            val (code, body) = read(c)
+            if (code !in 200..299) return@withContext false to (if (code == 401) "Firma nu este activa in cloud" else detail(body))
+            true to "Raportul a fost trimis pe ${JSONObject(body).optString("to")}"
+        } catch (e: Exception) { false to (e.message ?: "fara conexiune") }
+    }
+
     /** Fisierele firmei din cloud (cele mai noi primele); null = eroare (vezi mesajul). */
     suspend fun listFiles(): Pair<List<CloudFile>?, String> = withContext(Dispatchers.IO) {
         val t = token().ifEmpty { return@withContext null to "Aplicatia nu este asociata cu cloud.itsmart.ro" }

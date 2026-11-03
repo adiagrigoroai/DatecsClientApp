@@ -259,7 +259,10 @@ fun ExportScreen(viewModel: MainViewModel, deviceState: DeviceState) {
 private fun FiscalReportCard(viewModel: MainViewModel, deviceState: DeviceState, firma: String, reportText: String, reportLoading: Boolean,
                              initFrom: Date, initTo: Date, showFmt: SimpleDateFormat, dateFmt: SimpleDateFormat,
                              pickDate: (Date, (Date) -> Unit) -> Unit) {
-    val context = LocalContext.current
+    val busy by viewModel.fmBusy.collectAsStateWithLifecycle()
+    val result by viewModel.fmResult.collectAsStateWithLifecycle()
+    val accEmail by viewModel.accountantEmail.collectAsStateWithLifecycle()
+    LaunchedEffect(Unit) { viewModel.loadAccountant() }
     var open by remember { mutableStateOf(false) }
     var byZ by remember { mutableStateOf(true) }
     var detailed by remember { mutableStateOf(false) }
@@ -301,25 +304,42 @@ private fun FiscalReportCard(viewModel: MainViewModel, deviceState: DeviceState,
             Choice("Detaliat", null, detailed, Modifier.weight(1f)) { detailed = true }
         }
         Spacer(Modifier.height(12.dp))
+        val idle = busy.isEmpty()
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            PrimaryButton("Tipărește", Icons.Filled.Print, Modifier.weight(1f), color = AppColors.Warning) {
+            PrimaryButton("Tipărește", Icons.Filled.Print, Modifier.weight(1f), enabled = idle, color = AppColors.Warning) {
                 if (byZ) viewModel.executeFiscalReportByZ(zFrom, zTo, detailed)
                 else viewModel.executeFiscalReportByDate(dateFmt.format(from), dateFmt.format(to), detailed)
             }
-            OutlineButton(if (reportLoading) "Citire…" else "Vizualizează", Icons.Filled.Visibility, Modifier.weight(1f),
-                enabled = byZ && !reportLoading) { viewModel.previewFiscalReportByZ(zFrom, zTo, detailed) }
+            OutlineButton("Vizualizează", Icons.Filled.Visibility, Modifier.weight(1f),
+                enabled = byZ && idle) { viewModel.previewFiscalReportByZ(zFrom, zTo, detailed) }
         }
-        if (!byZ) Text("Vizualizarea pe ecran este disponibilă doar după nr. Z.", fontSize = 12.sp, color = AppColors.TextTertiary,
-            modifier = Modifier.padding(top = 6.dp))
+        Spacer(Modifier.height(8.dp))
+        OutlineButton("Trimite pe email", Icons.Filled.Email, enabled = byZ && idle) { viewModel.sendFmReportByEmail(zFrom, zTo, detailed) }
+        Text(if (!byZ) "Vizualizarea și emailul sunt disponibile doar după nr. Z."
+             else if (accEmail.isNotBlank()) "Emailul pleacă la $accEmail, cu raportul atașat (PDF și TXT)."
+             else "Setați adresa de email în Setări → Contabilitate ca să primiți raportul.",
+            fontSize = 12.sp, color = AppColors.TextTertiary, modifier = Modifier.padding(top = 6.dp))
+
+        if (!idle) {
+            Spacer(Modifier.height(12.dp))
+            Row(Modifier.fillMaxWidth().clip(RoundedCornerShape(14.dp)).background(AppColors.WarningBg).padding(14.dp),
+                verticalAlignment = Alignment.CenterVertically) {
+                CircularProgressIndicator(Modifier.size(22.dp), color = AppColors.Warning, strokeWidth = 3.dp)
+                Spacer(Modifier.width(12.dp))
+                Column {
+                    Text(busy, fontSize = 15.sp, fontWeight = FontWeight.W800, color = AppColors.TextPrimary)
+                    Text("Nu deconectați casa până la final.", fontSize = 12.5.sp, color = AppColors.TextSecondary)
+                }
+            }
+        } else result?.let { (ok, msg) ->
+            Spacer(Modifier.height(12.dp))
+            NoticeCard(if (ok) Icons.Filled.CheckCircle else Icons.Filled.ErrorOutline, if (ok) "Gata" else "Nu a reușit", msg,
+                if (ok) AppColors.Success else AppColors.Danger, if (ok) AppColors.SuccessBg else AppColors.DangerBg)
+        }
         if (reportText.isNotEmpty()) {
             Spacer(Modifier.height(10.dp))
             Text(reportText, fontSize = 10.sp, fontFamily = FontFamily.Monospace, color = AppColors.TextPrimary, lineHeight = 13.sp,
                 modifier = Modifier.fillMaxWidth().background(AppColors.Background, RoundedCornerShape(10.dp)).padding(10.dp))
-            Spacer(Modifier.height(8.dp))
-            OutlineButton("Trimite pe email (TXT)", Icons.Filled.Email) {
-                val intent = viewModel.createFmReportEmailIntent(reportText, firma, deviceState.serialNumber)
-                context.startActivity(Intent.createChooser(intent, "Trimite raport MF..."))
-            }
         }
     }
 }
