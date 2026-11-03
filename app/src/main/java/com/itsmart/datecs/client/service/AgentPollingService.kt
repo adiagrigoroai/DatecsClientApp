@@ -74,9 +74,12 @@ class AgentPollingService : Service() {
             ACTION_SET_SERIAL -> {
                 val s = intent.getStringExtra(EXTRA_NEW_SERIAL) ?: ""
                 activeSerial = s
+                if (s.isNotBlank()) getSharedPreferences("tda_server", MODE_PRIVATE).edit().putString("last_serial", s).apply()
                 Log.d(TAG, "activeSerial set to '$s'")
             }
         }
+        // dupa update / repornire / deconectare: comenzile CRM pentru ultima casa conectata vin in continuare
+        if (activeSerial.isBlank()) activeSerial = getSharedPreferences("tda_server", MODE_PRIVATE).getString("last_serial", "") ?: ""
 
         NotificationHelper.ensureChannels(this)   // si la pornirea dupa boot, fara MainActivity
         val notification = NotificationHelper.foregroundNotification(
