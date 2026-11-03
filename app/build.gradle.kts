@@ -1,4 +1,4 @@
-import java.util.Properties
+﻿import java.util.Properties
 
 plugins {
     id("com.android.application")
@@ -18,11 +18,11 @@ android {
         applicationId = "com.itsmart.datecs.client"
         minSdk = 28
         targetSdk = 34
-        versionCode = 16
-        versionName = "1.0.15"
+        versionCode = 17
+        versionName = "1.0.16"
     }
 
-    // Cheia de semnare: keystore.properties (in afara git) — storeFile, storePassword, keyAlias, keyPassword
+    // Cheia de semnare: keystore.properties (in afara git) â€” storeFile, storePassword, keyAlias, keyPassword
     signingConfigs {
         create("release") {
             storeFile = signingProps.getProperty("storeFile")?.let { rootProject.file(it) }
@@ -60,7 +60,7 @@ android {
 }
 
 dependencies {
-    // Jetpack Compose — BOM bump pentru compatibilitate Android 15 + Lenovo TB330FU
+    // Jetpack Compose â€” BOM bump pentru compatibilitate Android 15 + Lenovo TB330FU
     // (rezolva NoSuchMethodError KeyframesSpec.at() in CircularProgressIndicator)
     implementation(platform("androidx.compose:compose-bom:2024.12.01"))
     implementation("androidx.compose.ui:ui")

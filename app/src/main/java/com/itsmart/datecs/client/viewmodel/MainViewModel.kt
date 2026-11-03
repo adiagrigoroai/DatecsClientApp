@@ -1,5 +1,6 @@
 package com.itsmart.datecs.client.viewmodel
 
+import kotlinx.coroutines.sync.withLock
 import android.app.Application
 import android.graphics.Paint
 import android.graphics.Typeface
@@ -225,6 +226,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         // Cand service-ul detecteaza o comanda noua, va apela direct VM.onIncomingCrmCommand
         // (bypass broadcast — broadcast-ul era pierdut intermittent).
         activeInstance = this
+        viewModelScope.launch { sendPendingPvs() }
         // asocierea poate fi revocata din portal: se verifica la pornire (fara internet ramane cum era)
         // (instalarile inrolate din aplicatie au firma inactiva pana la plata: starea lor vine din refreshAccount)
         if (cloud.enrolled) { _isLoggedIn.value = true; _username.value = cloud.cachedAccount().email; refreshAccount() }
@@ -777,6 +779,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     // ==================== CRM MESSAGES ====================
 
     fun fetchCrmMessages() {
+        viewModelScope.launch { sendPendingPvs() }
         viewModelScope.launch {
             try {
                 val serial = _deviceState.value.serialNumber
@@ -997,9 +1000,9 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     /**
-     * Upload PV PDF la CRM. Acolo se face email-ul automat (suport@itsmart.ro + clientul).
-     * Endpoint propus: POST /api/agent/pv_upload/{commandId} multipart (pdf + meta JSON).
-     * Daca endpoint-ul intoarce 404, atunci am inclus deja textul PV in ACK V2 result.
+     * PV-ul reviziei merge la CRM (POST /api/agent/pv_upload/{commandId}: meta JSON + pdf), care il trimite pe email
+     * clientului si la suport. PV-ul si meta-ul se pastreaza in files/pv_pending pana cand CRM-ul il primeste,
+     * deci o trimitere esuata (fara internet, CRM indisponibil) se reia la pornire si la fiecare citire a mesajelor.
      */
     private suspend fun uploadPvToCrm(result: RevizieResult, commandId: String) {
         try {
@@ -1010,56 +1013,72 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                     addLog("EMAIL", "PV PDF nu exista local — skip upload", null, false)
                     return@withContext
                 }
-                val boundary = "----ITSmartBoundary${System.currentTimeMillis()}"
-                val url = java.net.URL("$CRM_BASE_URL/api/agent/pv_upload/${java.net.URLEncoder.encode(commandId, "UTF-8")}")
-                val conn = url.openConnection() as java.net.HttpURLConnection
-                conn.requestMethod = "POST"
-                conn.doOutput = true
-                conn.connectTimeout = 15000; conn.readTimeout = 30000
-                conn.setRequestProperty("Content-Type", "multipart/form-data; boundary=$boundary")
-                conn.outputStream.use { os ->
-                    val w = os.bufferedWriter(Charsets.UTF_8)
-                    // Meta JSON
-                    w.write("--$boundary\r\n")
-                    w.write("Content-Disposition: form-data; name=\"meta\"\r\n")
-                    w.write("Content-Type: application/json; charset=UTF-8\r\n\r\n")
-                    val meta = org.json.JSONObject().apply {
-                        put("serie_aparat", _deviceState.value.serialNumber)
-                        put("cif", _deviceState.value.cifNumber)
-                        put("model", _deviceState.value.model)
-                        put("data_executie", SimpleDateFormat("yyyy-MM-dd HH:mm:ss", Locale.getDefault()).format(Date()))
-                        put("service_date", result.newServiceDate)
-                        put("anaf_ok", result.anafCheckOk)
-                        put("sim_ok", result.simOk)
-                        put("crypto_ok", result.cryptoOk)
-                        put("modem_ok", result.modemOk)
-                        put("z_printed", result.zPrinted)
-                        put("send_email", true)
-                        put("pv_text", result.pvText)
-                    }
-                    w.write(meta.toString()); w.write("\r\n")
-                    w.flush()
-                    // PDF binary
-                    os.write("--$boundary\r\n".toByteArray())
-                    os.write("Content-Disposition: form-data; name=\"pdf\"; filename=\"${result.pdfFileName}\"\r\n".toByteArray())
-                    os.write("Content-Type: application/pdf\r\n\r\n".toByteArray())
-                    pdfFile.inputStream().use { it.copyTo(os) }
-                    os.write("\r\n".toByteArray())
-                    os.write("--$boundary--\r\n".toByteArray())
+                val dir = File(context.filesDir, "pv_pending").apply { mkdirs() }
+                pdfFile.copyTo(File(dir, "$commandId.pdf"), overwrite = true)
+                val meta = org.json.JSONObject().apply {
+                    put("serie_aparat", _deviceState.value.serialNumber)
+                    put("cif", _deviceState.value.cifNumber)
+                    put("model", _deviceState.value.model)
+                    put("data_executie", SimpleDateFormat("yyyy-MM-dd HH:mm:ss", Locale.getDefault()).format(Date()))
+                    put("service_date", result.newServiceDate)
+                    put("anaf_ok", result.anafCheckOk)
+                    put("sim_ok", result.simOk)
+                    put("crypto_ok", result.cryptoOk)
+                    put("modem_ok", result.modemOk)
+                    put("z_printed", result.zPrinted)
+                    put("send_email", true)
+                    put("pv_text", result.pvText)
                 }
-                val code = conn.responseCode
-                val resp = try { conn.inputStream.bufferedReader().readText() } catch (_: Exception) { "" }
-                if (code in 200..299) {
-                    addLog("EMAIL", "PV uploadat la CRM (auto-email)", "HTTP $code", true)
-                } else if (code == 404) {
-                    addLog("EMAIL", "Endpoint pv_upload lipseste pe CRM — PV doar in ACK", "HTTP 404", false)
-                } else {
-                    addLog("EMAIL", "Upload PV esuat", "HTTP $code: $resp", false)
-                }
+                File(dir, "$commandId.json").writeText(meta.toString())
             }
         } catch (e: Exception) {
-            addLog("EMAIL", "Upload PV exception", e.message, false)
+            addLog("EMAIL", "PV nu s-a putut salva pentru trimitere", e.message, false)
         }
+        sendPendingPvs()
+    }
+
+    private val pvMutex = kotlinx.coroutines.sync.Mutex()
+
+    /** Trimite la CRM PV-urile ramase in files/pv_pending. */
+    suspend fun sendPendingPvs() = pvMutex.withLock {
+        kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+            val dir = File(getApplication<Application>().filesDir, "pv_pending")
+            for (metaFile in dir.listFiles { f -> f.name.endsWith(".json") }.orEmpty()) {
+                val commandId = metaFile.nameWithoutExtension
+                val pdfFile = File(dir, "$commandId.pdf")
+                try {
+                    if (!pdfFile.exists()) { metaFile.delete(); continue }
+                    val code = postPv(commandId, metaFile.readText(), pdfFile)
+                    when {
+                        code in 200..299 -> addLog("EMAIL", "PV trimis la CRM (email catre client si suport)", "comanda $commandId", true)
+                        code in 400..499 -> addLog("EMAIL", "CRM a refuzat PV-ul", "comanda $commandId: HTTP $code", false)
+                        else -> { addLog("EMAIL", "PV netrimis, se reincearca", "comanda $commandId: HTTP $code", false); continue }
+                    }
+                    metaFile.delete(); pdfFile.delete()
+                } catch (e: Exception) {
+                    addLog("EMAIL", "PV netrimis (fara conexiune?), se reincearca", "comanda $commandId: ${e.message}", false)
+                }
+            }
+        }
+    }
+
+    private fun postPv(commandId: String, metaJson: String, pdfFile: File): Int {
+        val boundary = "----ITSmartBoundary${System.currentTimeMillis()}"
+        val url = java.net.URL("$CRM_BASE_URL/api/agent/pv_upload/${java.net.URLEncoder.encode(commandId, "UTF-8")}")
+        val conn = url.openConnection() as java.net.HttpURLConnection
+        conn.requestMethod = "POST"
+        conn.doOutput = true
+        conn.connectTimeout = 15000; conn.readTimeout = 30000
+        conn.setRequestProperty("Content-Type", "multipart/form-data; boundary=$boundary")
+        conn.outputStream.use { os ->
+            os.write(("--$boundary\r\nContent-Disposition: form-data; name=\"meta\"\r\n" +
+                "Content-Type: application/json; charset=UTF-8\r\n\r\n$metaJson\r\n").toByteArray(Charsets.UTF_8))
+            os.write(("--$boundary\r\nContent-Disposition: form-data; name=\"pdf\"; filename=\"PV_Revizie_$commandId.pdf\"\r\n" +
+                "Content-Type: application/pdf\r\n\r\n").toByteArray())
+            pdfFile.inputStream().use { it.copyTo(os) }
+            os.write("\r\n--$boundary--\r\n".toByteArray())
+        }
+        return conn.responseCode.also { conn.disconnect() }
     }
 
     private fun interpret71(param: Int, returnCode: Int): String = when {
