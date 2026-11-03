@@ -35,6 +35,7 @@ fun MessagesScreen(viewModel: MainViewModel, deviceState: DeviceState) {
     val revizieRunning by viewModel.revizieRunning.collectAsStateWithLifecycle()
     val revizieResult by viewModel.revizieResult.collectAsStateWithLifecycle()
 
+    val casaConectata by viewModel.connected.collectAsStateWithLifecycle()
     var showRevizieConfirm by remember { mutableStateOf(false) }
 
     Column(
@@ -98,6 +99,7 @@ fun MessagesScreen(viewModel: MainViewModel, deviceState: DeviceState) {
                             WarningItem("Ati executat raportul Z")
                             WarningItem("Aveti rola de hartie in aparat")
                             WarningItem("Aveti conexiune la internet")
+                            if (!casaConectata) WarningItem("Casa de marcat nu este conectata: conectati-o din Aparate, apoi reveniti aici")
                         }
                     }
                     Spacer(modifier = Modifier.height(12.dp))
@@ -109,10 +111,11 @@ fun MessagesScreen(viewModel: MainViewModel, deviceState: DeviceState) {
                             modifier = Modifier.weight(1f)
                         )
                         ActionButton(
-                            text = if (revizieRunning) "Revizie in curs..." else "Confirm si execut revizia",
+                            text = when { revizieRunning -> "Revizie in curs..."; !casaConectata -> "Conectati casa de marcat"
+                                else -> "Confirm si execut revizia" },
                             onClick = { viewModel.executeCrmRevizie() },
                             color = AppColors.Warning,
-                            enabled = !revizieRunning,
+                            enabled = !revizieRunning && casaConectata,
                             modifier = Modifier.weight(2f)
                         )
                     }

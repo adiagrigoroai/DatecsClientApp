@@ -34,6 +34,8 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         // Polling: GET  {CRM_BASE_URL}/api/agent/pending/{serie_aparat}
         // ACK:     POST {CRM_BASE_URL}/api/agent/ack/{command_id}  body {"status":"in_progress|done|failed","result":"..."}
         const val CRM_BASE_URL = "https://crm.itsmartretail.ro"
+        /** In companion: e initializat inainte de blocul init al VM-ului (care trimite deja PV-urile ramase). */
+        private val PV_MUTEX = kotlinx.coroutines.sync.Mutex()
 
         /** Referinta la VM-ul curent — folosita de AgentPollingService pentru auto-execute. */
         @Volatile var activeInstance: MainViewModel? = null
@@ -850,6 +852,8 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
     fun executeCrmRevizie() {
         val revizie = _pendingRevizie.value ?: return
+        // fara casa conectata toate verificarile ar esua si CRM-ul ar primi o revizie "facuta" fara rezultat
+        if (!_connected.value) { addLog("REVIZIE", "Conectati mai intai casa de marcat", "comanda ${revizie.id}", false); return }
         viewModelScope.launch {
             _revizieRunning.value = true
             _revizieResult.value = null
@@ -1037,10 +1041,8 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         sendPendingPvs()
     }
 
-    private val pvMutex = kotlinx.coroutines.sync.Mutex()
-
     /** Trimite la CRM PV-urile ramase in files/pv_pending. */
-    suspend fun sendPendingPvs() = pvMutex.withLock {
+    suspend fun sendPendingPvs() = PV_MUTEX.withLock {
         kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
             val dir = File(getApplication<Application>().filesDir, "pv_pending")
             for (metaFile in dir.listFiles { f -> f.name.endsWith(".json") }.orEmpty()) {

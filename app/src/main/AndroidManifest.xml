@@ -81,10 +81,11 @@
                 android:resource="@xml/file_paths" />
         </provider>
 
-        <!-- BlueCash: porneste monitorizarea casei dupa repornirea aparatului -->
+        <!-- dupa repornire / update: monitorizarea casei (BlueCash) si comenzile CRM pentru ultima casa conectata -->
         <receiver android:name=".service.BootReceiver" android:exported="false">
             <intent-filter>
                 <action android:name="android.intent.action.BOOT_COMPLETED" />
+                <action android:name="android.intent.action.MY_PACKAGE_REPLACED" />
             </intent-filter>
         </receiver>
 

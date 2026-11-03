@@ -111,8 +111,10 @@ class MainActivity : ComponentActivity() {
         // Initializez canalele de notificare (sunet + heads-up).
         com.itsmart.datecs.client.service.NotificationHelper.ensureChannels(this)
 
-        // BlueCash: monitorizarea starii casei in fundal porneste odata cu aplicatia (si dupa boot)
-        if (com.itsmart.datecs.client.device.InternalFiscalBridge.isAvailable()) {
+        // BlueCash: monitorizarea starii casei in fundal porneste odata cu aplicatia (si dupa boot);
+        // telefon / tableta: comenzile CRM pentru ultima casa conectata vin si inainte de reconectare
+        if (com.itsmart.datecs.client.device.InternalFiscalBridge.isAvailable() ||
+            !getSharedPreferences("tda_server", MODE_PRIVATE).getString("last_serial", null).isNullOrBlank()) {
             try {
                 startForegroundService(android.content.Intent(this, com.itsmart.datecs.client.service.AgentPollingService::class.java)
                     .setAction(com.itsmart.datecs.client.service.AgentPollingService.ACTION_START))
