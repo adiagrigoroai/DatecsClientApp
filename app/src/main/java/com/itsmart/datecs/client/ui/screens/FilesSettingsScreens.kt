@@ -162,8 +162,8 @@ fun SettingsScreen(viewModel: MainViewModel, wide: Boolean, onOpen: (Screen) -> 
         if (link.paired) {
             Section("Contabilitate")
             SoftCard {
-                Text("Dupa descarcare, fisierele XML ajunse in cloud se trimit automat pe email contabilului (cam la 30 de minute " +
-                    "dupa ultima descarcare, intr-un singur email).", fontSize = 13.sp, color = AppColors.TextSecondary)
+                Text("Dupa fiecare export, fisierele XML ajunse in cloud pleaca imediat pe emailul de mai jos; tot aici vine " +
+                    "si raportul memoriei fiscale trimis din aplicatie.", fontSize = 13.sp, color = AppColors.TextSecondary)
                 Spacer(Modifier.height(10.dp))
                 OutlinedTextField(value = accEdit, onValueChange = { accEdit = it.take(200) }, singleLine = true, modifier = Modifier.fillMaxWidth(),
                     label = { Text("Email contabil (mai multe: separate prin virgula)") }, shape = RoundedCornerShape(14.dp),
