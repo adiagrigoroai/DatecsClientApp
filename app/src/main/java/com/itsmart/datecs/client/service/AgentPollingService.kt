@@ -225,7 +225,7 @@ class AgentPollingService : Service() {
 
     private fun notifyAndDispatch(id: String, type: String, serial: String, payload: JSONObject) {
         val title = when (type) {
-            "REVIZIE", "SET_SERVICEDATE" -> "Comanda noua: REVIZIE"
+            "REVIZIE", "SET_SERVICEDATE" -> "Revizie programata: confirmati in Mesaje"
             "EXPORT_P7B" -> "Comanda noua: Export ANAF"
             "EXPORT_MF_SUMAR", "EXPORT_MF_DETALIAT", "EXPORT_MF_DET" -> "Comanda noua: Raport MF"
             "VERIFICARE_ANAF", "CHECK_ANAF", "CITIRE_DETALIATA", "READ_STATUS" -> "Comanda noua: Verificare ANAF"
@@ -240,7 +240,8 @@ class AgentPollingService : Service() {
             if (obs.isNotBlank()) appendLine(obs)
             val sd = payload.optString("service_date", "")
             if (sd.isNotBlank()) appendLine("Service date: $sd")
-            appendLine("Apasati pentru a executa.")
+            appendLine(if (type == "REVIZIE" || type == "SET_SERVICEDATE") "Revizia porneste doar dupa confirmare (se tipareste raportul Z)."
+                       else "Apasati pentru a executa.")
         }.trim()
         NotificationHelper.showCommandAvailable(this, title, body)
 

@@ -533,14 +533,10 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 serviceDate = effectiveSd,
                 observatii = payload.optString("observatii", "")
             )
-            if (_connected.value && !_revizieRunning.value) {
-                android.util.Log.d("MainVM", "AUTO-EXECUTE REVIZIE id=$commandId")
-                addLog("AGENT", "Comanda REVIZIE primita — auto-execute", "id=$commandId", true)
-                executeCrmRevizie()
-            } else {
-                android.util.Log.d("MainVM", "REVIZIE NU se executa: connected=${_connected.value} running=${_revizieRunning.value}")
-                addLog("AGENT", "Comanda REVIZIE primita — astept conectare", "id=$commandId", true)
-            }
+            // revizia tipareste raportul Z si modifica data de service a casei: porneste DOAR cu confirmarea
+            // operatorului (Mesaje → „Confirm si execut revizia”), nu la primire — pe BlueCash casa e mereu conectata
+            android.util.Log.d("MainVM", "REVIZIE id=$commandId asteapta confirmarea operatorului")
+            addLog("AGENT", "Comanda REVIZIE primita — astept confirmarea operatorului (Mesaje)", "id=$commandId", true)
         } else {
             addLog("AGENT", "Comanda $typeUp primita (handler ne-implementat in app)", "id=$commandId", false)
         }
